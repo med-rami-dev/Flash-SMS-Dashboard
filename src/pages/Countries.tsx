@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,7 +111,6 @@ const Countries = () => {
         description: "Country deleted successfully",
       });
       
-      // Update the local state
       setCountries(countries.filter(country => country.id !== id));
     } catch (error: any) {
       toast({
@@ -154,7 +152,18 @@ const Countries = () => {
         throw new Error("CSV must contain columns named 'name', 'price', and 'iso_code'");
       }
       
+      const { data: existingCountries, error: fetchError } = await supabase
+        .from('countries')
+        .select('name, iso_code');
+        
+      if (fetchError) throw fetchError;
+      
+      const existingNames = new Set(existingCountries?.map(c => c.name.toLowerCase()));
+      const existingIsoCodes = new Set(existingCountries?.map(c => c.iso_code.toUpperCase()));
+      
       const countriesToInsert = [];
+      const duplicates = [];
+      
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i].trim()) continue; // Skip empty rows
         
@@ -169,6 +178,11 @@ const Countries = () => {
           continue; // Skip invalid rows
         }
         
+        if (existingNames.has(name.toLowerCase()) || existingIsoCodes.has(isoCode)) {
+          duplicates.push(name);
+          continue;
+        }
+        
         const country = {
           name,
           price,
@@ -176,9 +190,15 @@ const Countries = () => {
         };
         
         countriesToInsert.push(country);
+        
+        existingNames.add(name.toLowerCase());
+        existingIsoCodes.add(isoCode);
       }
       
       if (countriesToInsert.length === 0) {
+        if (duplicates.length > 0) {
+          throw new Error(`All countries already exist: ${duplicates.slice(0, 3).join(', ')}${duplicates.length > 3 ? '...' : ''}`);
+        }
         throw new Error("No valid country data found in the CSV");
       }
       
@@ -190,9 +210,14 @@ const Countries = () => {
         throw error;
       }
       
+      let message = `Imported ${countriesToInsert.length} countries successfully`;
+      if (duplicates.length > 0) {
+        message += `. Skipped ${duplicates.length} duplicate entries.`;
+      }
+      
       toast({
         title: "Success",
-        description: `Imported ${countriesToInsert.length} countries successfully`,
+        description: message,
       });
       
       setCsvDialogOpen(false);
@@ -223,16 +248,32 @@ const Countries = () => {
         throw new Error("ISO code must be exactly 2 characters");
       }
 
-      // Convert ISO code to uppercase
-      const isoCode = formData.iso_code.toUpperCase();
+      const { data: existingCountries, error: checkError } = await supabase
+        .from('countries')
+        .select('id, name, iso_code')
+        .or(`name.eq.${formData.name},iso_code.eq.${formData.iso_code}`)
+        .maybeSingle();
+
+      if (checkError) {
+        throw checkError;
+      }
+
+      if (existingCountries && (!editingCountry || existingCountries.id !== editingCountry.id)) {
+        const errorField = existingCountries.name === formData.name ? 'name' : 'ISO code';
+        toast({
+          title: "Error",
+          description: `A country with this ${errorField} already exists`,
+          variant: "destructive",
+        });
+        return;
+      }
       
       if (editingCountry) {
-        // Update existing country
         const { error } = await supabase
           .from('countries')
           .update({
             name: formData.name,
-            iso_code: isoCode,
+            iso_code: formData.iso_code.toUpperCase(),
             price: price
           })
           .eq('id', editingCountry.id);
@@ -246,12 +287,11 @@ const Countries = () => {
           description: "Country updated successfully",
         });
       } else {
-        // Create new country
         const { error } = await supabase
           .from('countries')
           .insert({
             name: formData.name,
-            iso_code: isoCode,
+            iso_code: formData.iso_code.toUpperCase(),
             price: price
           });
 
@@ -265,7 +305,6 @@ const Countries = () => {
         });
       }
 
-      // Close the dialog and refresh the data
       setOpen(false);
       resetForm();
       fetchCountries();

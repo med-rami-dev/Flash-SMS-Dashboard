@@ -156,6 +156,16 @@ const Services = () => {
       }
       
       const servicesToInsert = [];
+      const duplicates = [];
+      
+      const { data: existingServices, error: fetchError } = await supabase
+        .from('services')
+        .select('name');
+        
+      if (fetchError) throw fetchError;
+      
+      const existingNames = new Set(existingServices?.map(s => s.name.toLowerCase()));
+      
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i].trim()) continue; // Skip empty rows
         
@@ -169,6 +179,11 @@ const Services = () => {
           continue; // Skip invalid rows
         }
         
+        if (existingNames.has(name.toLowerCase())) {
+          duplicates.push(name);
+          continue;
+        }
+        
         const service = {
           name,
           price,
@@ -176,9 +191,13 @@ const Services = () => {
         };
         
         servicesToInsert.push(service);
+        existingNames.add(name.toLowerCase());
       }
       
       if (servicesToInsert.length === 0) {
+        if (duplicates.length > 0) {
+          throw new Error(`All services already exist: ${duplicates.slice(0, 3).join(', ')}${duplicates.length > 3 ? '...' : ''}`);
+        }
         throw new Error("No valid service data found in the CSV");
       }
       
@@ -190,9 +209,14 @@ const Services = () => {
         throw error;
       }
       
+      let message = `Imported ${servicesToInsert.length} services successfully`;
+      if (duplicates.length > 0) {
+        message += `. Skipped ${duplicates.length} duplicate entries.`;
+      }
+      
       toast({
         title: "Success",
-        description: `Imported ${servicesToInsert.length} services successfully`,
+        description: message,
       });
       
       setCsvDialogOpen(false);
@@ -217,6 +241,25 @@ const Services = () => {
       
       if (isNaN(price)) {
         throw new Error("Price must be a valid number");
+      }
+      
+      const { data: existingServices, error: checkError } = await supabase
+        .from('services')
+        .select('id')
+        .eq('name', formData.name)
+        .maybeSingle();
+
+      if (checkError) {
+        throw checkError;
+      }
+
+      if (existingServices && (!editingService || existingServices.id !== editingService.id)) {
+        toast({
+          title: "Error",
+          description: "A service with this name already exists",
+          variant: "destructive",
+        });
+        return;
       }
       
       if (editingService) {
