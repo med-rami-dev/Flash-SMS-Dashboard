@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -109,7 +108,6 @@ const OffersNews = () => {
         description: "Item deleted successfully",
       });
       
-      // Update the local state
       setOffersNews(offersNews.filter(item => item.id !== id));
     } catch (error: any) {
       toast({
@@ -125,7 +123,6 @@ const OffersNews = () => {
     
     try {
       if (editingItem) {
-        // Update existing item
         const { error } = await supabase
           .from('offers_news')
           .update({
@@ -145,7 +142,6 @@ const OffersNews = () => {
           description: "Item updated successfully",
         });
       } else {
-        // Create new item
         const { error } = await supabase
           .from('offers_news')
           .insert({
@@ -165,7 +161,6 @@ const OffersNews = () => {
         });
       }
 
-      // Close the dialog and refresh the data
       setOpen(false);
       resetForm();
       fetchOffersNews();
@@ -261,7 +256,6 @@ const OffersNews = () => {
                         alt={item.title} 
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          // Handle image load errors
                           (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
                         }}
                       />

@@ -1,114 +1,124 @@
 
 import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 
 const Dashboard = () => {
-  const [stats, setStats] = useState({
-    countries: 0,
-    services: 0,
-    offersNews: 0
-  });
+  const [countriesCount, setCountriesCount] = useState(0);
+  const [servicesCount, setServicesCount] = useState(0);
+  const [offersCount, setOffersCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       setLoading(true);
       try {
-        // Get counts from each table
-        const [countriesResult, servicesResult, offersNewsResult] = await Promise.all([
-          supabase.from('countries').select('id', { count: 'exact', head: true }),
-          supabase.from('services').select('id', { count: 'exact', head: true }),
-          supabase.from('offers_news').select('id', { count: 'exact', head: true })
-        ]);
+        // Fetch counts from each table
+        const { count: countriesCount, error: countriesError } = await supabase
+          .from('countries')
+          .select('*', { count: 'exact', head: true });
 
-        setStats({
-          countries: countriesResult.count || 0,
-          services: servicesResult.count || 0,
-          offersNews: offersNewsResult.count || 0
-        });
+        const { count: servicesCount, error: servicesError } = await supabase
+          .from('services')
+          .select('*', { count: 'exact', head: true });
+
+        const { count: offersCount, error: offersError } = await supabase
+          .from('offers_news')
+          .select('*', { count: 'exact', head: true });
+
+        if (countriesError) throw countriesError;
+        if (servicesError) throw servicesError;
+        if (offersError) throw offersError;
+
+        setCountriesCount(countriesCount || 0);
+        setServicesCount(servicesCount || 0);
+        setOffersCount(offersCount || 0);
       } catch (error) {
-        console.error('Error fetching stats:', error);
+        console.error('Error fetching data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStats();
+    fetchData();
   }, []);
 
+  const chartData = [
+    { name: 'Countries', value: countriesCount, color: '#2563eb' },
+    { name: 'Services', value: servicesCount, color: '#16a34a' },
+    { name: 'Offers & News', value: offersCount, color: '#ea580c' },
+  ].filter(item => item.value > 0);
+
+  const COLORS = ['#2563eb', '#16a34a', '#ea580c', '#8b5cf6'];
+
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-6">Dashboard Overview</h1>
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold">Dashboard</h1>
       
-      {loading ? (
-        <div className="flex justify-center my-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle>Countries</CardTitle>
-              <CardDescription>Total managed countries</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{stats.countries}</p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle>Services</CardTitle>
-              <CardDescription>Total available services</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{stats.services}</p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle>Offers & News</CardTitle>
-              <CardDescription>Total published content</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{stats.offersNews}</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-      
-      <div className="mt-8">
+      <div className="grid gap-6 md:grid-cols-3">
         <Card>
-          <CardHeader>
-            <CardTitle>Getting Started</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Countries</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p>Welcome to your dashboard! Here's how to get started:</p>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>Use the sidebar to navigate between different sections</li>
-              <li>
-                <strong>Countries</strong>: Manage your country records with ISO codes and pricing
-              </li>
-              <li>
-                <strong>Services</strong>: Add, edit, or remove service offerings
-              </li>
-              <li>
-                <strong>Offers & News</strong>: Publish content and announcements
-              </li>
-            </ul>
-            <p className="mt-4">
-              To import data from an Excel file:
-            </p>
-            <ol className="list-decimal pl-5 space-y-2">
-              <li>First, convert your Excel file to CSV format using Excel's "Save As" feature</li>
-              <li>Ensure the CSV headers match your table column names</li>
-              <li>Use the Supabase dashboard or the import functionality in each section</li>
-            </ol>
+          <CardContent>
+            <div className="text-2xl font-bold">{loading ? '...' : countriesCount}</div>
+            <p className="text-xs text-muted-foreground">Countries in the database</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Services</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{loading ? '...' : servicesCount}</div>
+            <p className="text-xs text-muted-foreground">Services available</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Offers & News</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{loading ? '...' : offersCount}</div>
+            <p className="text-xs text-muted-foreground">Published offers and news</p>
           </CardContent>
         </Card>
       </div>
+      
+      {chartData.length > 0 && (
+        <Card className="col-span-3">
+          <CardHeader>
+            <CardTitle>Data Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`${value}`, 'Count']} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

@@ -15,6 +15,9 @@ const Countries = () => {
   const [countries, setCountries] = useState<Country[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
   const [editingCountry, setEditingCountry] = useState<Country | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -67,6 +70,13 @@ const Countries = () => {
     }
   };
 
+  const handleCsvDialogOpenChange = (open: boolean) => {
+    setCsvDialogOpen(open);
+    if (!open) {
+      setCsvFile(null);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -110,6 +120,92 @@ const Countries = () => {
         description: error.message || "Failed to delete country",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setCsvFile(e.target.files[0]);
+    }
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvFile) {
+      toast({
+        title: "Error",
+        description: "Please select a CSV file to import",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setImporting(true);
+
+    try {
+      const text = await csvFile.text();
+      const rows = text.split('\n');
+      const headers = rows[0].split(',');
+      
+      const nameIndex = headers.findIndex(h => h.trim().toLowerCase() === 'name');
+      const priceIndex = headers.findIndex(h => h.trim().toLowerCase() === 'price');
+      const isoCodeIndex = headers.findIndex(h => h.trim().toLowerCase() === 'iso_code');
+      
+      if (nameIndex === -1 || priceIndex === -1 || isoCodeIndex === -1) {
+        throw new Error("CSV must contain columns named 'name', 'price', and 'iso_code'");
+      }
+      
+      const countriesToInsert = [];
+      for (let i = 1; i < rows.length; i++) {
+        if (!rows[i].trim()) continue; // Skip empty rows
+        
+        const columns = rows[i].split(',');
+        
+        const name = columns[nameIndex]?.trim();
+        const priceStr = columns[priceIndex]?.trim();
+        const price = parseFloat(priceStr);
+        const isoCode = columns[isoCodeIndex]?.trim().toUpperCase();
+        
+        if (!name || isNaN(price) || !isoCode || isoCode.length !== 2) {
+          continue; // Skip invalid rows
+        }
+        
+        const country = {
+          name,
+          price,
+          iso_code: isoCode
+        };
+        
+        countriesToInsert.push(country);
+      }
+      
+      if (countriesToInsert.length === 0) {
+        throw new Error("No valid country data found in the CSV");
+      }
+      
+      const { error } = await supabase
+        .from('countries')
+        .insert(countriesToInsert);
+      
+      if (error) {
+        throw error;
+      }
+      
+      toast({
+        title: "Success",
+        description: `Imported ${countriesToInsert.length} countries successfully`,
+      });
+      
+      setCsvDialogOpen(false);
+      setCsvFile(null);
+      fetchCountries();
+    } catch (error: any) {
+      toast({
+        title: "Import Error",
+        description: error.message || "Failed to import countries",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -186,54 +282,89 @@ const Countries = () => {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Countries</h1>
-        <Dialog open={open} onOpenChange={handleOpenChange}>
-          <DialogTrigger asChild>
-            <Button>Add Country</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingCountry ? 'Edit Country' : 'Add New Country'}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Country Name</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  required
-                />
+        <div className="flex gap-2">
+          <Dialog open={csvDialogOpen} onOpenChange={handleCsvDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button variant="outline">Import CSV</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Import Countries from CSV</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="csv-file">Select CSV File</Label>
+                  <Input
+                    id="csv-file"
+                    type="file"
+                    accept=".csv"
+                    onChange={handleCsvFileChange}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    The CSV file should contain columns for 'name', 'iso_code' (2 letters), and 'price'.
+                  </p>
+                </div>
+                <Button 
+                  onClick={handleCsvImport} 
+                  disabled={!csvFile || importing}
+                  className="w-full"
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="iso_code">ISO Code (2 letters)</Label>
-                <Input
-                  id="iso_code"
-                  name="iso_code"
-                  value={formData.iso_code}
-                  onChange={handleInputChange}
-                  maxLength={2}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="price">Price</Label>
-                <Input
-                  id="price"
-                  name="price"
-                  type="number"
-                  step="0.01"
-                  value={formData.price}
-                  onChange={handleInputChange}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full">
-                {editingCountry ? 'Update' : 'Create'}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={open} onOpenChange={handleOpenChange}>
+            <DialogTrigger asChild>
+              <Button>Add Country</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editingCountry ? 'Edit Country' : 'Add New Country'}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Country Name</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="iso_code">ISO Code (2 letters)</Label>
+                  <Input
+                    id="iso_code"
+                    name="iso_code"
+                    value={formData.iso_code}
+                    onChange={handleInputChange}
+                    maxLength={2}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price</Label>
+                  <Input
+                    id="price"
+                    name="price"
+                    type="number"
+                    step="0.01"
+                    value={formData.price}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full">
+                  {editingCountry ? 'Update' : 'Create'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -287,7 +418,7 @@ const Countries = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No countries found. Click "Add Country" to create one.
+              No countries found. Click "Add Country" to create one or import from CSV.
             </div>
           )}
         </CardContent>
