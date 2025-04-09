@@ -64,21 +64,21 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
-          id: number
+          id: string
           name: string
           price: number
         }
         Insert: {
           created_at?: string
           description?: string | null
-          id?: number
+          id: string
           name: string
           price: number
         }
         Update: {
           created_at?: string
           description?: string | null
-          id?: number
+          id?: string
           name?: string
           price?: number
         }

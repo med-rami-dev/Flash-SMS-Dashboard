@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from '@/integrations/supabase/client';
 import { Database } from '@/types/supabase';
 import { format } from 'date-fns';
+import { FileUpload, Upload, X } from 'lucide-react';
 
 type OfferNews = Database['public']['Tables']['offers_news']['Row'];
 
@@ -23,6 +25,9 @@ const OffersNews = () => {
     publication_date: format(new Date(), 'yyyy-MM-dd'),
     image_url: ''
   });
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchOffersNews = async () => {
@@ -61,6 +66,8 @@ const OffersNews = () => {
       image_url: ''
     });
     setEditingItem(null);
+    setUploadedImage(null);
+    setUploadPreview(null);
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -77,6 +84,63 @@ const OffersNews = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setUploadedImage(file);
+      
+      // Create preview URL
+      const url = URL.createObjectURL(file);
+      setUploadPreview(url);
+    }
+  };
+
+  const clearUploadedImage = () => {
+    setUploadedImage(null);
+    if (uploadPreview) {
+      URL.revokeObjectURL(uploadPreview);
+      setUploadPreview(null);
+    }
+  };
+
+  const uploadFileToStorage = async (file: File): Promise<string | null> => {
+    setUploadLoading(true);
+    try {
+      // Create a unique file path
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `offers_news/${fileName}`;
+      
+      // Upload file to Supabase storage
+      const { data, error } = await supabase.storage
+        .from('media')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('media')
+        .getPublicUrl(filePath);
+        
+      return publicUrl;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to upload image",
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
   const handleEdit = (item: OfferNews) => {
     setEditingItem(item);
     setFormData({
@@ -85,6 +149,12 @@ const OffersNews = () => {
       publication_date: format(new Date(item.publication_date), 'yyyy-MM-dd'),
       image_url: item.image_url || ''
     });
+    
+    // If there's an existing image, set it as preview
+    if (item.image_url) {
+      setUploadPreview(item.image_url);
+    }
+    
     setOpen(true);
   };
 
@@ -94,6 +164,27 @@ const OffersNews = () => {
     }
 
     try {
+      // Get the item to find the image URL
+      const itemToDelete = offersNews.find(item => item.id === id);
+      
+      // Delete the image from storage if it exists
+      if (itemToDelete?.image_url) {
+        // Extract the path from the URL
+        const urlParts = itemToDelete.image_url.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        const filePath = `offers_news/${fileName}`;
+        
+        // Delete from storage
+        const { error: storageError } = await supabase.storage
+          .from('media')
+          .remove([filePath]);
+          
+        if (storageError) {
+          console.error("Error deleting image:", storageError);
+        }
+      }
+      
+      // Delete the database record
       const { error } = await supabase
         .from('offers_news')
         .delete()
@@ -122,14 +213,27 @@ const OffersNews = () => {
     e.preventDefault();
     
     try {
+      let imageUrl = formData.image_url;
+      
+      // If a new image has been uploaded, upload it to Supabase storage
+      if (uploadedImage) {
+        const uploadedUrl = await uploadFileToStorage(uploadedImage);
+        if (uploadedUrl) {
+          imageUrl = uploadedUrl;
+        }
+      }
+      
+      // Always use current date for publication_date
+      const currentDate = format(new Date(), 'yyyy-MM-dd');
+      
       if (editingItem) {
         const { error } = await supabase
           .from('offers_news')
           .update({
             title: formData.title,
             content: formData.content,
-            publication_date: formData.publication_date,
-            image_url: formData.image_url || null
+            publication_date: currentDate,
+            image_url: imageUrl || null
           })
           .eq('id', editingItem.id);
 
@@ -147,8 +251,8 @@ const OffersNews = () => {
           .insert({
             title: formData.title,
             content: formData.content,
-            publication_date: formData.publication_date,
-            image_url: formData.image_url || null
+            publication_date: currentDate,
+            image_url: imageUrl || null
           });
 
         if (error) {
@@ -207,29 +311,57 @@ const OffersNews = () => {
                   required
                 />
               </div>
+              
               <div className="space-y-2">
-                <Label htmlFor="publication_date">Publication Date</Label>
-                <Input
-                  id="publication_date"
-                  name="publication_date"
-                  type="date"
-                  value={formData.publication_date}
-                  onChange={handleInputChange}
-                  required
-                />
+                <Label>Image Upload</Label>
+                <div className="flex flex-col gap-3">
+                  {uploadPreview ? (
+                    <div className="relative w-full h-48 bg-gray-100 rounded-md overflow-hidden">
+                      <img 
+                        src={uploadPreview} 
+                        alt="Image preview" 
+                        className="w-full h-full object-cover"
+                      />
+                      <Button 
+                        type="button"
+                        size="icon"
+                        variant="destructive" 
+                        className="absolute top-2 right-2 rounded-full h-8 w-8"
+                        onClick={clearUploadedImage}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-md cursor-pointer bg-gray-50 hover:bg-gray-100">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <FileUpload className="w-8 h-8 mb-2 text-gray-500" />
+                        <p className="mb-2 text-sm text-gray-500">
+                          <span className="font-semibold">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-gray-500">PNG, JPG or GIF (max 5MB)</p>
+                      </div>
+                      <Input 
+                        id="image-upload" 
+                        type="file" 
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleImageUpload}
+                      />
+                    </label>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="image_url">Image URL (Optional)</Label>
-                <Input
-                  id="image_url"
-                  name="image_url"
-                  value={formData.image_url}
-                  onChange={handleInputChange}
-                  placeholder="https://example.com/image.jpg"
-                />
-              </div>
-              <Button type="submit" className="w-full">
-                {editingItem ? 'Update' : 'Create'}
+              
+              <Button type="submit" className="w-full" disabled={uploadLoading}>
+                {uploadLoading ? (
+                  <span className="flex items-center">
+                    <Upload className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </span>
+                ) : (
+                  editingItem ? 'Update' : 'Create'
+                )}
               </Button>
             </form>
           </DialogContent>
