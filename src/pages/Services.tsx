@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,7 +114,6 @@ const Services = () => {
         description: "Service deleted successfully",
       });
       
-      // Update the local state
       setServices(services.filter(service => service.id !== id));
     } catch (error: any) {
       toast({
@@ -145,14 +143,10 @@ const Services = () => {
     setImporting(true);
 
     try {
-      // This is a demonstration of how you would manually parse a CSV file
-      // In a real implementation, you'd likely use a server-side function to handle this
-      // since client-side processing of large files can be inefficient
       const text = await csvFile.text();
       const rows = text.split('\n');
       const headers = rows[0].split(',');
       
-      // Find indexes for required columns
       const nameIndex = headers.findIndex(h => h.trim().toLowerCase() === 'name');
       const priceIndex = headers.findIndex(h => h.trim().toLowerCase() === 'price');
       const descriptionIndex = headers.findIndex(h => h.trim().toLowerCase() === 'description');
@@ -161,15 +155,14 @@ const Services = () => {
         throw new Error("CSV must contain columns named 'name' and 'price'");
       }
       
-      // Process data rows
-      const services = [];
+      const servicesToInsert = [];
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i].trim()) continue; // Skip empty rows
         
         const columns = rows[i].split(',');
         
-        const name = columns[nameIndex].trim();
-        const priceStr = columns[priceIndex].trim();
+        const name = columns[nameIndex]?.trim();
+        const priceStr = columns[priceIndex]?.trim();
         const price = parseFloat(priceStr);
         
         if (!name || isNaN(price)) {
@@ -177,22 +170,21 @@ const Services = () => {
         }
         
         const service = {
-          name: name,
-          price: price,
-          description: descriptionIndex !== -1 ? columns[descriptionIndex].trim() : undefined
+          name,
+          price,
+          description: descriptionIndex !== -1 ? columns[descriptionIndex]?.trim() : null
         };
         
-        services.push(service);
+        servicesToInsert.push(service);
       }
       
-      if (services.length === 0) {
+      if (servicesToInsert.length === 0) {
         throw new Error("No valid service data found in the CSV");
       }
       
-      // Insert the services into the database
       const { error } = await supabase
         .from('services')
-        .insert(services);
+        .insert(servicesToInsert);
       
       if (error) {
         throw error;
@@ -200,10 +192,9 @@ const Services = () => {
       
       toast({
         title: "Success",
-        description: `Imported ${services.length} services successfully`,
+        description: `Imported ${servicesToInsert.length} services successfully`,
       });
       
-      // Close the dialog and refresh the data
       setCsvDialogOpen(false);
       setCsvFile(null);
       fetchServices();
@@ -229,7 +220,6 @@ const Services = () => {
       }
       
       if (editingService) {
-        // Update existing service
         const { error } = await supabase
           .from('services')
           .update({
@@ -248,7 +238,6 @@ const Services = () => {
           description: "Service updated successfully",
         });
       } else {
-        // Create new service
         const { error } = await supabase
           .from('services')
           .insert({
@@ -267,7 +256,6 @@ const Services = () => {
         });
       }
 
-      // Close the dialog and refresh the data
       setOpen(false);
       resetForm();
       fetchServices();
