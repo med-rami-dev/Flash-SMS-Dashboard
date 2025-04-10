@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from '@/integrations/supabase/client';
 import { Database } from '@/types/supabase';
 import { format } from 'date-fns';
-import { FileUpload, Upload, X } from 'lucide-react';
+import { Upload, X, FileIcon } from 'lucide-react';
 
 type OfferNews = Database['public']['Tables']['offers_news']['Row'];
 
@@ -335,7 +335,7 @@ const OffersNews = () => {
                   ) : (
                     <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-md cursor-pointer bg-gray-50 hover:bg-gray-100">
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <FileUpload className="w-8 h-8 mb-2 text-gray-500" />
+                        <FileIcon className="w-8 h-8 mb-2 text-gray-500" />
                         <p className="mb-2 text-sm text-gray-500">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
