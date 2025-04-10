@@ -1,64 +1,51 @@
-
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { account } from '@/integrations/appwrite/client';
+import { Models } from 'appwrite';
 import { useToast } from "@/components/ui/use-toast";
 
-type AuthContextType = {
-  session: Session | null;
-  user: User | null;
+interface AuthContextType {
+  user: Models.User<Models.Preferences> | null;
+  currentUser: Models.User<Models.Preferences> | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-};
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Error getting session:', error.message);
-      } else {
-        setSession(session);
-        setUser(session?.user || null);
-      }
-      setLoading(false);
-    };
-
-    getSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        setUser(session?.user || null);
+    // Check if user is already logged in
+    const checkUser = async () => {
+      try {
+        const currentUser = await account.get();
+        setUser(currentUser);
+      } catch (error) {
+        setUser(null);
+      } finally {
         setLoading(false);
       }
-    );
-
-    return () => {
-      subscription.unsubscribe();
     };
+
+    checkUser();
   }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        throw error;
-      }
+      await account.createEmailSession(email, password);
+      const currentUser = await account.get();
+      setUser(currentUser);
       toast({
         title: "Success",
         description: "You have successfully signed in",
       });
     } catch (error: any) {
+      console.error('Error signing in:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to sign in",
@@ -73,15 +60,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw error;
-      }
+      await account.deleteSession('current');
+      setUser(null);
       toast({
         title: "Success",
         description: "You have successfully signed out",
       });
     } catch (error: any) {
+      console.error('Error signing out:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to sign out",
@@ -94,16 +80,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, currentUser: user, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
+}

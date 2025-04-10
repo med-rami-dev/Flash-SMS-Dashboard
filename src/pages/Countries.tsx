@@ -1,47 +1,52 @@
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { databases } from '@/integrations/appwrite/client';
+import { ID, Models } from 'appwrite';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { supabase } from '@/integrations/supabase/client';
-import { Database } from '@/types/supabase';
+import { FaEdit, FaTrash } from 'react-icons/fa';
+import ReactCountryFlag from "react-country-flag";
 
-type Country = Database['public']['Tables']['countries']['Row'];
+interface Country extends Models.Document {
+  name: string;
+  iso_code: string;
+  price: string;
+  created_at: string;
+}
 
-const Countries = () => {
+const Countries: React.FC = () => {
   const [countries, setCountries] = useState<Country[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [name, setName] = useState('');
+  const [isoCode, setIsoCode] = useState('');
+  const [price, setPrice] = useState('');
   const [editingCountry, setEditingCountry] = useState<Country | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    iso_code: '',
-    price: ''
-  });
+  const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { currentUser } = useAuth();
   const { toast } = useToast();
 
   const fetchCountries = async () => {
-    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('countries')
-        .select('*')
-        .order('name');
+      setLoading(true);
+      setError(null);
 
-      if (error) {
-        throw error;
-      }
+      const response = await databases.listDocuments<Country>(
+        '67f741820018b85a6f1a',
+        'countries'
+      );
 
-      setCountries(data || []);
-    } catch (error: any) {
+      setCountries(response.documents);
+    } catch (error) {
+      console.error('Error fetching countries:', error);
+      setError('Failed to fetch countries. Please try again.');
       toast({
         title: "Error",
-        description: error.message || "Failed to fetch countries",
+        description: "Failed to fetch countries",
         variant: "destructive",
       });
     } finally {
@@ -53,415 +58,301 @@ const Countries = () => {
     fetchCountries();
   }, []);
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      iso_code: '',
-      price: ''
-    });
-    setEditingCountry(null);
-  };
-
-  const handleOpenChange = (open: boolean) => {
-    setOpen(open);
-    if (!open) {
-      resetForm();
-    }
-  };
-
-  const handleCsvDialogOpenChange = (open: boolean) => {
-    setCsvDialogOpen(open);
-    if (!open) {
-      setCsvFile(null);
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleEdit = (country: Country) => {
-    setEditingCountry(country);
-    setFormData({
-      name: country.name,
-      iso_code: country.iso_code,
-      price: country.price.toString()
-    });
-    setOpen(true);
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this country?')) {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!currentUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to add a country",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('countries')
-        .delete()
-        .eq('id', id);
+      setLoading(true);
+      setError(null);
 
-      if (error) {
-        throw error;
+      const newCountry = {
+        name,
+        iso_code: isoCode,
+        price: price.toString(),
+        created_at: new Date().toISOString()
+      };
+
+      await databases.createDocument(
+        '67f741820018b85a6f1a',
+        'countries',
+        ID.unique(),
+        newCountry
+      );
+
+      setName('');
+      setIsoCode('');
+      setPrice('');
+      fetchCountries();
+
+      toast({
+        title: "Success",
+        description: "Country added successfully",
+      });
+    } catch (error: any) {
+      console.error('Error adding country:', error);
+      if (error.message.includes('not authorized')) {
+        setError('You do not have permission to add countries. Please contact your administrator.');
+      } else {
+        setError('Failed to add country. Please try again.');
       }
+      toast({
+        title: "Error",
+        description: error.message.includes('not authorized')
+          ? "You do not have permission to add countries"
+          : "Failed to add country",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (country: Country) => {
+    setEditingCountry(country);
+    setName(country.name);
+    setIsoCode(country.iso_code);
+    setPrice(country.price);
+    setShowModal(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingCountry || !currentUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to update a country",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      await databases.updateDocument(
+        '67f741820018b85a6f1a',
+        'countries',
+        editingCountry.$id,
+        {
+          name,
+          iso_code: isoCode,
+          price: price.toString()
+        }
+      );
+
+      setShowModal(false);
+      setEditingCountry(null);
+      setName('');
+      setIsoCode('');
+      setPrice('');
+      fetchCountries();
+
+      toast({
+        title: "Success",
+        description: "Country updated successfully",
+      });
+    } catch (error: any) {
+      console.error('Error updating country:', error);
+      if (error.message.includes('not authorized')) {
+        setError('You do not have permission to update countries. Please contact your administrator.');
+      } else {
+        setError('Failed to update country. Please try again.');
+      }
+      toast({
+        title: "Error",
+        description: error.message.includes('not authorized')
+          ? "You do not have permission to update countries"
+          : "Failed to update country",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!currentUser) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      await databases.deleteDocument(
+        '67f741820018b85a6f1a',
+        'countries',
+        id
+      );
+
+      fetchCountries();
 
       toast({
         title: "Success",
         description: "Country deleted successfully",
       });
-      
-      setCountries(countries.filter(country => country.id !== id));
-    } catch (error: any) {
+    } catch (error) {
+      console.error('Error deleting country:', error);
+      setError('Failed to delete country. Please try again.');
       toast({
         title: "Error",
-        description: error.message || "Failed to delete country",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setCsvFile(e.target.files[0]);
-    }
-  };
-
-  const handleCsvImport = async () => {
-    if (!csvFile) {
-      toast({
-        title: "Error",
-        description: "Please select a CSV file to import",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setImporting(true);
-
-    try {
-      const text = await csvFile.text();
-      const rows = text.split('\n');
-      const headers = rows[0].split(',');
-      
-      const nameIndex = headers.findIndex(h => h.trim().toLowerCase() === 'name');
-      const priceIndex = headers.findIndex(h => h.trim().toLowerCase() === 'price');
-      const isoCodeIndex = headers.findIndex(h => h.trim().toLowerCase() === 'iso_code');
-      
-      if (nameIndex === -1 || priceIndex === -1 || isoCodeIndex === -1) {
-        throw new Error("CSV must contain columns named 'name', 'price', and 'iso_code'");
-      }
-      
-      const { data: existingCountries, error: fetchError } = await supabase
-        .from('countries')
-        .select('name, iso_code');
-        
-      if (fetchError) throw fetchError;
-      
-      const existingNames = new Set(existingCountries?.map(c => c.name.toLowerCase()));
-      const existingIsoCodes = new Set(existingCountries?.map(c => c.iso_code.toUpperCase()));
-      
-      const countriesToInsert = [];
-      const duplicates = [];
-      
-      for (let i = 1; i < rows.length; i++) {
-        if (!rows[i].trim()) continue; // Skip empty rows
-        
-        const columns = rows[i].split(',');
-        
-        const name = columns[nameIndex]?.trim();
-        const priceStr = columns[priceIndex]?.trim();
-        const price = parseFloat(priceStr);
-        const isoCode = columns[isoCodeIndex]?.trim().toUpperCase();
-        
-        if (!name || isNaN(price) || !isoCode || isoCode.length !== 2) {
-          continue; // Skip invalid rows
-        }
-        
-        if (existingNames.has(name.toLowerCase()) || existingIsoCodes.has(isoCode)) {
-          duplicates.push(name);
-          continue;
-        }
-        
-        const country = {
-          name,
-          price,
-          iso_code: isoCode
-        };
-        
-        countriesToInsert.push(country);
-        
-        existingNames.add(name.toLowerCase());
-        existingIsoCodes.add(isoCode);
-      }
-      
-      if (countriesToInsert.length === 0) {
-        if (duplicates.length > 0) {
-          throw new Error(`All countries already exist: ${duplicates.slice(0, 3).join(', ')}${duplicates.length > 3 ? '...' : ''}`);
-        }
-        throw new Error("No valid country data found in the CSV");
-      }
-      
-      const { error } = await supabase
-        .from('countries')
-        .insert(countriesToInsert);
-      
-      if (error) {
-        throw error;
-      }
-      
-      let message = `Imported ${countriesToInsert.length} countries successfully`;
-      if (duplicates.length > 0) {
-        message += `. Skipped ${duplicates.length} duplicate entries.`;
-      }
-      
-      toast({
-        title: "Success",
-        description: message,
-      });
-      
-      setCsvDialogOpen(false);
-      setCsvFile(null);
-      fetchCountries();
-    } catch (error: any) {
-      toast({
-        title: "Import Error",
-        description: error.message || "Failed to import countries",
+        description: "Failed to delete country",
         variant: "destructive",
       });
     } finally {
-      setImporting(false);
+      setLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    try {
-      const price = parseFloat(formData.price);
-      
-      if (isNaN(price)) {
-        throw new Error("Price must be a valid number");
-      }
-      
-      if (formData.iso_code.length !== 2) {
-        throw new Error("ISO code must be exactly 2 characters");
-      }
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
-      const { data: existingCountries, error: checkError } = await supabase
-        .from('countries')
-        .select('id, name, iso_code')
-        .or(`name.eq.${formData.name},iso_code.eq.${formData.iso_code}`)
-        .maybeSingle();
-
-      if (checkError) {
-        throw checkError;
-      }
-
-      if (existingCountries && (!editingCountry || existingCountries.id !== editingCountry.id)) {
-        const errorField = existingCountries.name === formData.name ? 'name' : 'ISO code';
-        toast({
-          title: "Error",
-          description: `A country with this ${errorField} already exists`,
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      if (editingCountry) {
-        const { error } = await supabase
-          .from('countries')
-          .update({
-            name: formData.name,
-            iso_code: formData.iso_code.toUpperCase(),
-            price: price
-          })
-          .eq('id', editingCountry.id);
-
-        if (error) {
-          throw error;
-        }
-
-        toast({
-          title: "Success",
-          description: "Country updated successfully",
-        });
-      } else {
-        const { error } = await supabase
-          .from('countries')
-          .insert({
-            name: formData.name,
-            iso_code: formData.iso_code.toUpperCase(),
-            price: price
-          });
-
-        if (error) {
-          throw error;
-        }
-
-        toast({
-          title: "Success",
-          description: "Country created successfully",
-        });
-      }
-
-      setOpen(false);
-      resetForm();
-      fetchCountries();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to save country",
-        variant: "destructive",
-      });
-    }
-  };
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-500">{error}</div>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Countries</h1>
-        <div className="flex gap-2">
-          <Dialog open={csvDialogOpen} onOpenChange={handleCsvDialogOpenChange}>
-            <DialogTrigger asChild>
-              <Button variant="outline">Import CSV</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Import Countries from CSV</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="csv-file">Select CSV File</Label>
-                  <Input
-                    id="csv-file"
-                    type="file"
-                    accept=".csv"
-                    onChange={handleCsvFileChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    The CSV file should contain columns for 'name', 'iso_code' (2 letters), and 'price'.
-                  </p>
-                </div>
-                <Button 
-                  onClick={handleCsvImport} 
-                  disabled={!csvFile || importing}
-                  className="w-full"
-                >
-                  {importing ? 'Importing...' : 'Import'}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogTrigger asChild>
-              <Button>Add Country</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editingCountry ? 'Edit Country' : 'Add New Country'}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Country Name</Label>
-                  <Input
-                    id="name"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="iso_code">ISO Code (2 letters)</Label>
-                  <Input
-                    id="iso_code"
-                    name="iso_code"
-                    value={formData.iso_code}
-                    onChange={handleInputChange}
-                    maxLength={2}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price</Label>
-                  <Input
-                    id="price"
-                    name="price"
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  {editingCountry ? 'Update' : 'Create'}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-bold text-gray-900">Countries Management</h2>
+        <Button
+          onClick={() => setShowModal(true)}
+          className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+        >
+          Add New Country
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Countries</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {countries.map((country) => (
+          <Card key={country.$id} className="hover:shadow-lg transition-shadow duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-full bg-[#004aad]/10 flex items-center justify-center">
+                    <ReactCountryFlag
+                      countryCode={country.iso_code}
+                      svg
+                      style={{
+                        width: '1.5em',
+                        height: '1.5em',
+                      }}
+                      title={country.iso_code}
+                    />
+                  </div>
+                  <h3 className="text-xl font-semibold">{country.name}</h3>
+                </div>
+                <div className="flex space-x-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="hover:bg-gray-100"
+                    onClick={() => handleEdit(country)}
+                  >
+                    <FaEdit className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="hover:bg-red-50 hover:text-red-600"
+                    onClick={() => handleDelete(country.$id)}
+                  >
+                    <FaTrash className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">
+                  Created: {new Date(country.created_at).toLocaleDateString()}
+                </span>
+                <span className="text-lg font-semibold text-[#004aad]">
+                  {parseFloat(country.price).toFixed(2)} Coins
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              {editingCountry ? 'Edit' : 'Add New'} Country
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={editingCountry ? handleUpdate : handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="name">Country Name</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="w-full"
+              />
             </div>
-          ) : countries.length > 0 ? (
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>ISO Code</th>
-                    <th>Price</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {countries.map((country) => (
-                    <tr key={country.id}>
-                      <td>{country.name}</td>
-                      <td>{country.iso_code}</td>
-                      <td>${country.price.toFixed(2)}</td>
-                      <td>
-                        <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleEdit(country)}
-                          >
-                            Edit
-                          </Button>
-                          <Button 
-                            variant="destructive" 
-                            size="sm" 
-                            onClick={() => handleDelete(country.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="space-y-2">
+              <Label htmlFor="iso_code">ISO Code</Label>
+              <Input
+                id="iso_code"
+                value={isoCode}
+                onChange={(e) => setIsoCode(e.target.value)}
+                required
+                className="w-full"
+                placeholder="e.g., US, UK, AE"
+              />
             </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No countries found. Click "Add Country" to create one or import from CSV.
+
+            <div className="space-y-2">
+              <Label htmlFor="price">Price</Label>
+              <Input
+                id="price"
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                required
+                className="w-full"
+                placeholder="0.00"
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            <div className="flex justify-end space-x-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+              >
+                {loading ? 'Saving...' : (editingCountry ? 'Update' : 'Add')} Country
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

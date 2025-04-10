@@ -1,50 +1,90 @@
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { databases, storage, account } from '@/integrations/appwrite/client';
+import { ID, Models, Permission, Role, Query } from 'appwrite';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
-import { supabase } from '@/integrations/supabase/client';
-import { Database } from '@/types/supabase';
+import { FaEdit, FaTrash, FaImage, FaSearch, FaUpload } from 'react-icons/fa';
+import * as PhosphorIcons from '@phosphor-icons/react';
+import type { IconProps } from '@phosphor-icons/react';
 
-type Service = Database['public']['Tables']['services']['Row'];
+// Appwrite constants
+const APPWRITE_BUCKET_ID = 'icons';
 
-const Services = () => {
+interface Service extends Models.Document {
+  name: string;
+  icon_url: string;
+  price: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+type PhosphorIconComponent = React.ForwardRefExoticComponent<IconProps & React.RefAttributes<SVGSVGElement>>;
+
+interface PhosphorIcon {
+  name: string;
+  Icon: PhosphorIconComponent;
+}
+
+const Services: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [name, setName] = useState('');
+  const [iconUrl, setIconUrl] = useState('');
+  const [price, setPrice] = useState('');
   const [editingService, setEditingService] = useState<Service | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    price: ''
-  });
+  const [showModal, setShowModal] = useState(false);
+  const [showIconDialog, setShowIconDialog] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { currentUser } = useAuth();
   const { toast } = useToast();
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadedSvg, setUploadedSvg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Get all Phosphor icons
+  const phosphorIcons: PhosphorIcon[] = Object.entries(PhosphorIcons)
+    .filter(([name, Icon]) => {
+      // Filter out non-icon components and special exports
+      return name !== 'default' &&
+        name !== '__esModule' &&
+        typeof Icon === 'function' &&
+        '$$typeof' in Icon &&
+        'render' in Icon;
+    })
+    .map(([name, Icon]) => ({
+      name,
+      Icon: Icon as PhosphorIconComponent
+    }));
 
   const fetchServices = async () => {
-    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .order('name');
+      setLoading(true);
 
-      if (error) {
-        throw error;
-      }
-
-      setServices(data || []);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch services",
-        variant: "destructive",
-      });
+      // First check if we're authenticated
+      const currentUser = await account.get();
+      const response = await databases.listDocuments(
+        '67f741820018b85a6f1a',
+        'services',
+        [
+          Query.orderDesc('$createdAt')
+        ]
+      );
+      setServices(response.documents as Service[]);
+    } catch (err: any) {
+      console.error('Detailed error:', err);
+      console.error('Error type:', err.type);
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
+      setError(`Failed to fetch services: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -54,407 +94,483 @@ const Services = () => {
     fetchServices();
   }, []);
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      price: ''
-    });
-    setEditingService(null);
-  };
-
-  const handleOpenChange = (open: boolean) => {
-    setOpen(open);
-    if (!open) {
-      resetForm();
-    }
-  };
-
-  const handleCsvDialogOpenChange = (open: boolean) => {
-    setCsvDialogOpen(open);
-    if (!open) {
-      setCsvFile(null);
-    }
-  };
-
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleEdit = (service: Service) => {
-    setEditingService(service);
-    setFormData({
-      name: service.name,
-      description: service.description || '',
-      price: service.price.toString()
-    });
-    setOpen(true);
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this service?')) {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!currentUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to add a service",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('services')
-        .delete()
-        .eq('id', id);
+      setLoading(true);
+      setError(null);
 
-      if (error) {
-        throw error;
+      const newService = {
+        name,
+        icon_url: iconUrl,
+        price: parseFloat(price),
+        created_at: new Date().toISOString()
+      };
+
+      await databases.createDocument(
+        '67f741820018b85a6f1a',
+        'services',
+        ID.unique(),
+        newService
+      );
+
+      // Clear form fields
+      setName('');
+      setIconUrl('');
+      setPrice('');
+      setUploadedSvg(null);
+
+      // Close the modal
+      setShowModal(false);
+
+      // Fetch updated services list
+      fetchServices();
+
+      toast({
+        title: "Success",
+        description: "Service added successfully",
+      });
+    } catch (error: any) {
+      console.error('Error adding service:', error);
+      if (error.message.includes('not authorized')) {
+        setError('You do not have permission to add services. Please contact your administrator.');
+      } else {
+        setError('Failed to add service. Please try again.');
       }
+      toast({
+        title: "Error",
+        description: error.message.includes('not authorized')
+          ? "You do not have permission to add services"
+          : "Failed to add service",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (service: Service) => {
+    setEditingService(service);
+    setName(service.name);
+    setIconUrl(service.icon_url);
+    setPrice(service.price.toString());
+    setShowModal(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingService || !currentUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to update a service",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      await databases.updateDocument(
+        '67f741820018b85a6f1a',
+        'services',
+        editingService.$id,
+        {
+          name,
+          icon_url: iconUrl,
+          price: parseFloat(price)
+        }
+      );
+
+      setShowModal(false);
+      setEditingService(null);
+      setName('');
+      setIconUrl('');
+      setPrice('');
+      fetchServices();
+
+      toast({
+        title: "Success",
+        description: "Service updated successfully",
+      });
+    } catch (error: any) {
+      console.error('Error updating service:', error);
+      if (error.message.includes('not authorized')) {
+        setError('You do not have permission to update services. Please contact your administrator.');
+      } else {
+        setError('Failed to update service. Please try again.');
+      }
+      toast({
+        title: "Error",
+        description: error.message.includes('not authorized')
+          ? "You do not have permission to update services"
+          : "Failed to update service",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!currentUser) {
+      toast({
+        title: "Error",
+        description: "Please log in to delete a service",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      await databases.deleteDocument(
+        '67f741820018b85a6f1a',
+        'services',
+        id
+      );
+
+      fetchServices();
 
       toast({
         title: "Success",
         description: "Service deleted successfully",
       });
-      
-      setServices(services.filter(service => service.id !== id));
     } catch (error: any) {
+      console.error('Error deleting service:', error);
+      if (error.message.includes('not authorized')) {
+        setError('You do not have permission to delete services. Please contact your administrator.');
+      } else {
+        setError('Failed to delete service. Please try again.');
+      }
       toast({
         title: "Error",
-        description: error.message || "Failed to delete service",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setCsvFile(e.target.files[0]);
-    }
-  };
-
-  const handleCsvImport = async () => {
-    if (!csvFile) {
-      toast({
-        title: "Error",
-        description: "Please select a CSV file to import",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setImporting(true);
-
-    try {
-      const text = await csvFile.text();
-      const rows = text.split('\n');
-      const headers = rows[0].split(',');
-      
-      const nameIndex = headers.findIndex(h => h.trim().toLowerCase() === 'name');
-      const priceIndex = headers.findIndex(h => h.trim().toLowerCase() === 'price');
-      const descriptionIndex = headers.findIndex(h => h.trim().toLowerCase() === 'description');
-      
-      if (nameIndex === -1 || priceIndex === -1) {
-        throw new Error("CSV must contain columns named 'name' and 'price'");
-      }
-      
-      const servicesToInsert = [];
-      const duplicates = [];
-      
-      const { data: existingServices, error: fetchError } = await supabase
-        .from('services')
-        .select('name');
-        
-      if (fetchError) throw fetchError;
-      
-      const existingNames = new Set(existingServices?.map(s => s.name.toLowerCase()));
-      
-      for (let i = 1; i < rows.length; i++) {
-        if (!rows[i].trim()) continue; // Skip empty rows
-        
-        const columns = rows[i].split(',');
-        
-        const name = columns[nameIndex]?.trim();
-        const priceStr = columns[priceIndex]?.trim();
-        const price = parseFloat(priceStr);
-        
-        if (!name || isNaN(price)) {
-          continue; // Skip invalid rows
-        }
-        
-        if (existingNames.has(name.toLowerCase())) {
-          duplicates.push(name);
-          continue;
-        }
-        
-        const service = {
-          name,
-          price,
-          description: descriptionIndex !== -1 ? columns[descriptionIndex]?.trim() : null
-        };
-        
-        servicesToInsert.push(service);
-        existingNames.add(name.toLowerCase());
-      }
-      
-      if (servicesToInsert.length === 0) {
-        if (duplicates.length > 0) {
-          throw new Error(`All services already exist: ${duplicates.slice(0, 3).join(', ')}${duplicates.length > 3 ? '...' : ''}`);
-        }
-        throw new Error("No valid service data found in the CSV");
-      }
-      
-      const { error } = await supabase
-        .from('services')
-        .insert(servicesToInsert);
-      
-      if (error) {
-        throw error;
-      }
-      
-      let message = `Imported ${servicesToInsert.length} services successfully`;
-      if (duplicates.length > 0) {
-        message += `. Skipped ${duplicates.length} duplicate entries.`;
-      }
-      
-      toast({
-        title: "Success",
-        description: message,
-      });
-      
-      setCsvDialogOpen(false);
-      setCsvFile(null);
-      fetchServices();
-    } catch (error: any) {
-      toast({
-        title: "Import Error",
-        description: error.message || "Failed to import services",
+        description: error.message.includes('not authorized')
+          ? "You do not have permission to delete services"
+          : "Failed to delete service",
         variant: "destructive",
       });
     } finally {
-      setImporting(false);
+      setLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    try {
-      const price = parseFloat(formData.price);
-      
-      if (isNaN(price)) {
-        throw new Error("Price must be a valid number");
-      }
-      
-      const { data: existingServices, error: checkError } = await supabase
-        .from('services')
-        .select('id')
-        .eq('name', formData.name)
-        .maybeSingle();
-
-      if (checkError) {
-        throw checkError;
-      }
-
-      if (existingServices && (!editingService || existingServices.id !== editingService.id)) {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type !== 'image/svg+xml') {
         toast({
           title: "Error",
-          description: "A service with this name already exists",
+          description: "Please upload an SVG file",
           variant: "destructive",
         });
         return;
       }
-      
-      if (editingService) {
-        const { error } = await supabase
-          .from('services')
-          .update({
-            name: formData.name,
-            description: formData.description || null,
-            price: price
-          })
-          .eq('id', editingService.id);
 
-        if (error) {
-          throw error;
-        }
-
+      try {
+        const svgUrl = await uploadSvgToStorage(file);
+        setUploadedSvg(svgUrl);
+        setIconUrl(svgUrl);
+        setShowUploadDialog(false);
         toast({
           title: "Success",
-          description: "Service updated successfully",
+          description: "SVG uploaded successfully",
         });
-      } else {
-        const { error } = await supabase
-          .from('services')
-          .insert({
-            name: formData.name,
-            description: formData.description || null,
-            price: price
-          });
-
-        if (error) {
-          throw error;
-        }
-
+      } catch (error) {
         toast({
-          title: "Success",
-          description: "Service created successfully",
+          title: "Error",
+          description: "Failed to upload SVG",
+          variant: "destructive",
         });
       }
-
-      setOpen(false);
-      resetForm();
-      fetchServices();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to save service",
-        variant: "destructive",
-      });
     }
   };
 
+  const uploadSvgToStorage = async (file: File): Promise<string> => {
+    try {
+      setUploading(true);
+      const fileId = ID.unique();
+      const response = await storage.createFile(
+        APPWRITE_BUCKET_ID,
+        fileId,
+        file,
+        [
+          Permission.read(Role.users()),
+          Permission.write(Role.users()),
+          Permission.delete(Role.users()),
+          Permission.update(Role.users()),
+        ]
+      );
+      return storage.getFileView(APPWRITE_BUCKET_ID, response.$id).toString();
+    } catch (error) {
+      console.error('Error uploading SVG:', error);
+      throw new Error('Failed to upload SVG. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleIconSelect = (name: string) => {
+    const iconData = phosphorIcons.find(({ name: iconName }) => iconName === name);
+    if (iconData) {
+      const { Icon } = iconData;
+      // Create a temporary file for the icon
+      const svgString = `<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">${Icon.toString()}</svg>`;
+      const blob = new Blob([svgString], { type: 'image/svg+xml' });
+      const file = new File([blob], `${name}.svg`, { type: 'image/svg+xml' });
+
+      // Upload the icon to storage
+      uploadSvgToStorage(file)
+        .then(svgUrl => {
+          setIconUrl(svgUrl);
+          setShowIconDialog(false);
+        })
+        .catch(error => {
+          toast({
+            title: "Error",
+            description: "Failed to save icon",
+            variant: "destructive",
+          });
+        });
+    }
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-500">{error}</div>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Services</h1>
-        <div className="flex gap-2">
-          <Dialog open={csvDialogOpen} onOpenChange={handleCsvDialogOpenChange}>
-            <DialogTrigger asChild>
-              <Button variant="outline">Import CSV</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Import Services from CSV</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="csv-file">Select CSV File</Label>
-                  <Input
-                    id="csv-file"
-                    type="file"
-                    accept=".csv"
-                    onChange={handleCsvFileChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    The CSV file should contain columns for 'name', 'price', and optionally 'description'.
-                  </p>
-                </div>
-                <Button 
-                  onClick={handleCsvImport} 
-                  disabled={!csvFile || importing}
-                  className="w-full"
-                >
-                  {importing ? 'Importing...' : 'Import'}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogTrigger asChild>
-              <Button>Add Service</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editingService ? 'Edit Service' : 'Add New Service'}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Service Name</Label>
-                  <Input
-                    id="name"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description (Optional)</Label>
-                  <Textarea
-                    id="description"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    rows={3}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price</Label>
-                  <Input
-                    id="price"
-                    name="price"
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  {editingService ? 'Update' : 'Create'}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-bold text-gray-900">Services Management</h2>
+        <Button
+          onClick={() => {
+            // Reset form state when adding a new service
+            setEditingService(null);
+            setName('');
+            setIconUrl('');
+            setPrice('');
+            setUploadedSvg(null);
+            setShowModal(true);
+          }}
+          className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+        >
+          Add New Service
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Services</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {services.map((service) => (
+          <Card key={service.$id} className="hover:shadow-lg transition-shadow duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 rounded-lg bg-[#004aad]/10 flex items-center justify-center">
+                    {service.icon_url ? (
+                      <img
+                        src={service.icon_url}
+                        alt={service.name}
+                        className="w-8 h-8 object-contain"
+                      />
+                    ) : (
+                      <FaImage className="w-8 h-8 text-[#004aad]" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold">{service.name}</h3>
+                    <p className="text-lg font-semibold text-[#004aad]">
+                      {service.price.toFixed(2)} Coins
+                    </p>
+                  </div>
+                </div>
+                <div className="flex space-x-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="hover:bg-gray-100"
+                    onClick={() => handleEdit(service)}
+                  >
+                    <FaEdit className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="hover:bg-red-50 hover:text-red-600"
+                    onClick={() => handleDelete(service.$id)}
+                  >
+                    <FaTrash className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="text-sm text-gray-500">
+                Created: {new Date(service.created_at).toLocaleDateString()}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              {editingService ? 'Edit' : 'Add New'} Service
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={editingService ? handleUpdate : handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="name">Service Name</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="w-full"
+              />
             </div>
-          ) : services.length > 0 ? (
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Price</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {services.map((service) => (
-                    <tr key={service.id}>
-                      <td>{service.name}</td>
-                      <td>{service.description || '-'}</td>
-                      <td>${service.price.toFixed(2)}</td>
-                      <td>
-                        <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleEdit(service)}
-                          >
-                            Edit
-                          </Button>
-                          <Button 
-                            variant="destructive" 
-                            size="sm" 
-                            onClick={() => handleDelete(service.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="space-y-2">
+              <Label htmlFor="icon_url">Icon</Label>
+              <div className="flex flex-col space-y-4">
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 rounded-lg bg-[#004aad]/10 flex items-center justify-center">
+                    {iconUrl ? (
+                      <img
+                        src={iconUrl}
+                        alt="Selected icon"
+                        className="w-8 h-8 object-contain"
+                      />
+                    ) : (
+                      <FaImage className="w-8 h-8 text-[#004aad]" />
+                    )}
+                  </div>
+                  {/* <div className="flex-1">
+                    <Input
+                      id="icon_url"
+                      value={iconUrl}
+                      onChange={(e) => setIconUrl(e.target.value)}
+                      placeholder="Enter icon URL"
+                      className="w-full"
+                    />
+                  </div> */}
+                </div>
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowUploadDialog(true)}
+                    className="w-full"
+                  >
+                    <FaUpload className="mr-2" />
+                    Upload SVG
+                  </Button>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No services found. Click "Add Service" to create one or import from CSV.
+
+            <div className="space-y-2">
+              <Label htmlFor="price">Price</Label>
+              <Input
+                id="price"
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                required
+                className="w-full"
+                placeholder="0.00"
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            <div className="flex justify-end space-x-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+              >
+                {loading ? 'Saving...' : (editingService ? 'Update' : 'Add')} Service
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+
+      {/* SVG Upload Dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Upload SVG Icon</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".svg"
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleUploadClick}
+                disabled={uploading}
+                className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+              >
+                <FaUpload className="mr-2" />
+                {uploading ? 'Uploading...' : 'Choose SVG File'}
+              </Button>
+              <p className="mt-2 text-sm text-gray-500">
+                Only SVG files are supported
+              </p>
+            </div>
+
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowUploadDialog(false)}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

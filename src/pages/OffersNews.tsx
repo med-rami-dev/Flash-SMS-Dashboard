@@ -1,436 +1,424 @@
-
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/use-toast";
-import { supabase } from '@/integrations/supabase/client';
-import { Database } from '@/types/supabase';
-import { format } from 'date-fns';
-import { FileUpload, Upload, X } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { storage, databases } from '@/integrations/appwrite/client';
+import { ID, Models, Permission, Role } from 'appwrite';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 
-type OfferNews = Database['public']['Tables']['offers_news']['Row'];
+// Appwrite constants
+const APPWRITE_BUCKET_ID = 'media';
+const APPWRITE_DATABASE_ID = 'flash_sms';
+const APPWRITE_COLLECTION_ID = 'offers_news';
 
-const OffersNews = () => {
-  const [offersNews, setOffersNews] = useState<OfferNews[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
+// Error boundary component
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 text-red-500">
+          <h2>Something went wrong.</h2>
+          <p>Please try refreshing the page.</p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+interface OfferNews extends Models.Document {
+  title: string;
+  content: string;
+  created_at: Date;
+  image_url: string;
+  is_offer: boolean;
+  btn_url_action: string;
+}
+
+const OffersNews: React.FC = () => {
+  const [items, setItems] = useState<OfferNews[]>([]);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<OfferNews | null>(null);
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    publication_date: format(new Date(), 'yyyy-MM-dd'),
-    image_url: ''
-  });
-  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
-  const [uploadLoading, setUploadLoading] = useState(false);
-  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [showModal, setShowModal] = useState(false);
+  const [isOffer, setIsOffer] = useState(false);
+  const [btnUrlAction, setBtnUrlAction] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const { currentUser } = useAuth();
 
-  const fetchOffersNews = async () => {
-    setLoading(true);
+  const fetchItems = async () => {
     try {
-      const { data, error } = await supabase
-        .from('offers_news')
-        .select('*')
-        .order('publication_date', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      setOffersNews(data || []);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch offers and news",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+      const response = await databases.listDocuments<OfferNews>(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67'
+      );
+      setItems(response.documents);
+    } catch (error) {
+      console.error('Error fetching items:', error);
+      setError('Failed to fetch items. Please try again.');
     }
   };
 
   useEffect(() => {
-    fetchOffersNews();
+    fetchItems();
   }, []);
 
-  const resetForm = () => {
-    setFormData({
-      title: '',
-      content: '',
-      publication_date: format(new Date(), 'yyyy-MM-dd'),
-      image_url: ''
-    });
-    setEditingItem(null);
-    setUploadedImage(null);
-    setUploadPreview(null);
-  };
-
-  const handleOpenChange = (open: boolean) => {
-    setOpen(open);
-    if (!open) {
-      resetForm();
-    }
-  };
-
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setUploadedImage(file);
-      
-      // Create preview URL
-      const url = URL.createObjectURL(file);
-      setUploadPreview(url);
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
     }
   };
 
-  const clearUploadedImage = () => {
-    setUploadedImage(null);
-    if (uploadPreview) {
-      URL.revokeObjectURL(uploadPreview);
-      setUploadPreview(null);
-    }
-  };
-
-  const uploadFileToStorage = async (file: File): Promise<string | null> => {
-    setUploadLoading(true);
+  const uploadImageToAppwrite = async (file: File): Promise<string> => {
     try {
-      // Create a unique file path
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `offers_news/${fileName}`;
-      
-      // Upload file to Supabase storage
-      const { data, error } = await supabase.storage
-        .from('media')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-      
-      if (error) {
-        throw error;
-      }
-      
-      // Get the public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('media')
-        .getPublicUrl(filePath);
-        
-      return publicUrl;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to upload image",
-        variant: "destructive",
-      });
-      return null;
+      setUploading(true);
+      const fileId = ID.unique();
+      const response = await storage.createFile(
+        APPWRITE_BUCKET_ID,
+        fileId,
+        file,
+        [
+          Permission.read(Role.users()), // Grants read access to all authenticated users
+          Permission.write(Role.users()), // Grants write access to all authenticated users
+          Permission.delete(Role.users()), // Grants delete access to all authenticated users
+          Permission.update(Role.users()), // Grants update access to all authenticated users
+
+        ]
+      );
+      return response.$id;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw new Error('Failed to upload image. Please try again.');
     } finally {
-      setUploadLoading(false);
+      setUploading(false);
+    }
+  };
+
+
+  const getImageUrl = (fileId: string): string => {
+    try {
+      const fileView = storage.getFileView(APPWRITE_BUCKET_ID, fileId);
+      return fileView.toString();
+    } catch (error) {
+      console.error('Error getting image URL:', error);
+      return '';
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    try {
+      setError(null);
+      let imageUrl = '';
+
+      if (imageFile) {
+        try {
+          const fileId = await uploadImageToAppwrite(imageFile);
+          imageUrl = getImageUrl(fileId);
+        } catch (error) {
+          setError('Failed to upload image. Please try again.');
+          return;
+        }
+      }
+
+      const newItem = {
+        title,
+        content,
+        created_at: new Date().toISOString(),
+        image_url: imageUrl,
+        is_offer: isOffer,
+        btn_url_action: btnUrlAction,
+      };
+
+      await databases.createDocument(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67',
+        ID.unique(),
+        newItem
+      );
+
+      setTitle('');
+      setContent('');
+      setImageFile(null);
+      setImagePreview(null);
+      setIsOffer(false);
+      setBtnUrlAction('');
+      fetchItems();
+    } catch (error) {
+      console.error('Error adding item:', error);
+      setError('Failed to add item. Please try again.');
     }
   };
 
   const handleEdit = (item: OfferNews) => {
     setEditingItem(item);
-    setFormData({
-      title: item.title,
-      content: item.content,
-      publication_date: format(new Date(item.publication_date), 'yyyy-MM-dd'),
-      image_url: item.image_url || ''
-    });
-    
-    // If there's an existing image, set it as preview
-    if (item.image_url) {
-      setUploadPreview(item.image_url);
-    }
-    
-    setOpen(true);
+    setTitle(item.title);
+    setContent(item.content);
+    setImagePreview(item.image_url);
+    setIsOffer(item.is_offer);
+    setBtnUrlAction(item.btn_url_action);
+    setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this item?')) {
-      return;
-    }
-
-    try {
-      // Get the item to find the image URL
-      const itemToDelete = offersNews.find(item => item.id === id);
-      
-      // Delete the image from storage if it exists
-      if (itemToDelete?.image_url) {
-        // Extract the path from the URL
-        const urlParts = itemToDelete.image_url.split('/');
-        const fileName = urlParts[urlParts.length - 1];
-        const filePath = `offers_news/${fileName}`;
-        
-        // Delete from storage
-        const { error: storageError } = await supabase.storage
-          .from('media')
-          .remove([filePath]);
-          
-        if (storageError) {
-          console.error("Error deleting image:", storageError);
-        }
-      }
-      
-      // Delete the database record
-      const { error } = await supabase
-        .from('offers_news')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        throw error;
-      }
-
-      toast({
-        title: "Success",
-        description: "Item deleted successfully",
-      });
-      
-      setOffersNews(offersNews.filter(item => item.id !== id));
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete item",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
+    if (!editingItem || !currentUser) return;
+
     try {
-      let imageUrl = formData.image_url;
-      
-      // If a new image has been uploaded, upload it to Supabase storage
-      if (uploadedImage) {
-        const uploadedUrl = await uploadFileToStorage(uploadedImage);
-        if (uploadedUrl) {
-          imageUrl = uploadedUrl;
+      setError(null);
+      let imageUrl = editingItem.image_url;
+
+      if (imageFile) {
+        try {
+          const fileId = await uploadImageToAppwrite(imageFile);
+          imageUrl = getImageUrl(fileId);
+        } catch (error) {
+          setError('Failed to upload image. Please try again.');
+          return;
         }
       }
-      
-      // Always use current date for publication_date
-      const currentDate = format(new Date(), 'yyyy-MM-dd');
-      
-      if (editingItem) {
-        const { error } = await supabase
-          .from('offers_news')
-          .update({
-            title: formData.title,
-            content: formData.content,
-            publication_date: currentDate,
-            image_url: imageUrl || null
-          })
-          .eq('id', editingItem.id);
 
-        if (error) {
-          throw error;
+      await databases.updateDocument(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67',
+        editingItem.$id,
+        {
+          title,
+          content,
+          image_url: imageUrl,
+          is_offer: isOffer,
+          btn_url_action: btnUrlAction,
+          updated_at: new Date().toISOString()
         }
+      );
 
-        toast({
-          title: "Success",
-          description: "Item updated successfully",
-        });
-      } else {
-        const { error } = await supabase
-          .from('offers_news')
-          .insert({
-            title: formData.title,
-            content: formData.content,
-            publication_date: currentDate,
-            image_url: imageUrl || null
-          });
-
-        if (error) {
-          throw error;
-        }
-
-        toast({
-          title: "Success",
-          description: "Item created successfully",
-        });
-      }
-
-      setOpen(false);
-      resetForm();
-      fetchOffersNews();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to save item",
-        variant: "destructive",
-      });
+      setShowModal(false);
+      setEditingItem(null);
+      setTitle('');
+      setContent('');
+      setImageFile(null);
+      setImagePreview(null);
+      setIsOffer(false);
+      setBtnUrlAction('');
+      fetchItems();
+    } catch (error) {
+      console.error('Error updating item:', error);
+      setError('Failed to update item. Please try again.');
     }
   };
+
+  const handleDelete = async (id: string) => {
+    if (!currentUser) return;
+
+    try {
+      await databases.deleteDocument(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67',
+        id
+      );
+      fetchItems();
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      setError('Failed to delete item. Please try again.');
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-500">
+        <h2>Error</h2>
+        <p>{error}</p>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Offers & News</h1>
-        <Dialog open={open} onOpenChange={handleOpenChange}>
-          <DialogTrigger asChild>
-            <Button>Add New</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
+    <ErrorBoundary>
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold text-gray-900">Offers & News Management</h2>
+          <Button
+            onClick={() => setShowModal(true)}
+            className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+          >
+            Add New {isOffer ? 'Offer' : 'News'}
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {items.map((item) => (
+            <Card key={item.$id} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
+              {item.image_url && (
+                <div className="relative h-48">
+                  <img
+                    src={item.image_url}
+                    alt={item.title}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-2 right-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${item.is_offer ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                      {item.is_offer ? 'Offer' : 'News'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <CardContent className="p-6">
+                <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
+                <p className="text-gray-600 mb-4 line-clamp-3">{item.content}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </span>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="hover:bg-gray-100"
+                      onClick={() => handleEdit(item)}
+                    >
+                      <FaEdit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="hover:bg-red-50 hover:text-red-600"
+                      onClick={() => handleDelete(item.$id)}
+                    >
+                      <FaTrash className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <Dialog open={showModal} onOpenChange={setShowModal}>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
+              <DialogTitle className="text-2xl font-bold">
+                {editingItem ? 'Edit' : 'Add New'} {isOffer ? 'Offer' : 'News'}
+              </DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleInputChange}
-                  required
-                />
+            <form onSubmit={editingItem ? handleUpdate : handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input
+                    id="title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    required
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="btnUrlAction">Button URL Action</Label>
+                  <Input
+                    id="btnUrlAction"
+                    type="url"
+                    value={btnUrlAction}
+                    onChange={(e) => setBtnUrlAction(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full"
+                  />
+                </div>
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="content">Content</Label>
                 <Textarea
                   id="content"
-                  name="content"
-                  value={formData.content}
-                  onChange={handleInputChange}
-                  rows={5}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
                   required
+                  className="min-h-[150px]"
                 />
               </div>
-              
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="isOffer"
+                  checked={isOffer}
+                  onCheckedChange={setIsOffer}
+                />
+                <Label htmlFor="isOffer">This is an offer</Label>
+              </div>
+
               <div className="space-y-2">
-                <Label>Image Upload</Label>
-                <div className="flex flex-col gap-3">
-                  {uploadPreview ? (
-                    <div className="relative w-full h-48 bg-gray-100 rounded-md overflow-hidden">
-                      <img 
-                        src={uploadPreview} 
-                        alt="Image preview" 
-                        className="w-full h-full object-cover"
-                      />
-                      <Button 
-                        type="button"
-                        size="icon"
-                        variant="destructive" 
-                        className="absolute top-2 right-2 rounded-full h-8 w-8"
-                        onClick={clearUploadedImage}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-md cursor-pointer bg-gray-50 hover:bg-gray-100">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <FileUpload className="w-8 h-8 mb-2 text-gray-500" />
-                        <p className="mb-2 text-sm text-gray-500">
-                          <span className="font-semibold">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-gray-500">PNG, JPG or GIF (max 5MB)</p>
-                      </div>
-                      <Input 
-                        id="image-upload" 
-                        type="file" 
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleImageUpload}
-                      />
-                    </label>
+                <Label htmlFor="image">Image</Label>
+                <div className="flex items-center space-x-4">
+                  <Input
+                    id="image"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    disabled={uploading}
+                    className="flex-1"
+                  />
+                  {imagePreview && (
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-20 h-20 object-cover rounded-lg"
+                    />
                   )}
                 </div>
-              </div>
-              
-              <Button type="submit" className="w-full" disabled={uploadLoading}>
-                {uploadLoading ? (
-                  <span className="flex items-center">
-                    <Upload className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
-                  </span>
-                ) : (
-                  editingItem ? 'Update' : 'Create'
+                {uploading && (
+                  <div className="text-sm text-gray-500">Uploading image...</div>
                 )}
-              </Button>
+              </div>
+
+              <div className="flex justify-end space-x-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={uploading}
+                  className="bg-[#004aad] hover:bg-[#003d8a] text-white"
+                >
+                  {uploading ? 'Uploading...' : (editingItem ? 'Update' : 'Add')} {isOffer ? 'Offer' : 'News'}
+                </Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Offers & News</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-          ) : offersNews.length > 0 ? (
-            <div className="grid gap-6 md:grid-cols-2">
-              {offersNews.map((item) => (
-                <Card key={item.id} className="overflow-hidden">
-                  {item.image_url && (
-                    <div className="h-48 overflow-hidden">
-                      <img 
-                        src={item.image_url} 
-                        alt={item.title} 
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
-                        }}
-                      />
-                    </div>
-                  )}
-                  <CardContent className="p-4">
-                    <div className="mb-4">
-                      <h3 className="text-xl font-semibold">{item.title}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Published on {format(new Date(item.publication_date), 'MMM dd, yyyy')}
-                      </p>
-                    </div>
-                    <div className="mb-4">
-                      <p className="text-sm line-clamp-3">{item.content}</p>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleEdit(item)}
-                      >
-                        Edit
-                      </Button>
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
-                        onClick={() => handleDelete(item.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No offers or news found. Click "Add New" to create one.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    </ErrorBoundary>
   );
 };
 
