@@ -19,6 +19,7 @@ const APPWRITE_BUCKET_ID = 'icons';
 interface Service extends Models.Document {
   name: string;
   icon_url: string;
+  projectId: number;
   price: number;
   created_at: Date;
   updated_at: Date;
@@ -36,6 +37,7 @@ const Services: React.FC = () => {
   const [name, setName] = useState('');
   const [iconUrl, setIconUrl] = useState('');
   const [price, setPrice] = useState('');
+  const [projectId, setProjectId] = useState('');
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showIconDialog, setShowIconDialog] = useState(false);
@@ -113,6 +115,7 @@ const Services: React.FC = () => {
         name,
         icon_url: iconUrl,
         price: parseFloat(price),
+        projectId: parseInt(projectId),
         created_at: new Date().toISOString()
       };
 
@@ -127,6 +130,7 @@ const Services: React.FC = () => {
       setName('');
       setIconUrl('');
       setPrice('');
+      setProjectId('');
       setUploadedSvg(null);
 
       // Close the modal
@@ -163,6 +167,7 @@ const Services: React.FC = () => {
     setName(service.name);
     setIconUrl(service.icon_url);
     setPrice(service.price.toString());
+    setProjectId(service.projectId.toString());
     setShowModal(true);
   };
 
@@ -188,7 +193,8 @@ const Services: React.FC = () => {
         {
           name,
           icon_url: iconUrl,
-          price: parseFloat(price)
+          price: parseFloat(price),
+          projectId: parseInt(projectId)
         }
       );
 
@@ -197,6 +203,7 @@ const Services: React.FC = () => {
       setName('');
       setIconUrl('');
       setPrice('');
+      setProjectId('');
       fetchServices();
 
       toast({
@@ -313,7 +320,7 @@ const Services: React.FC = () => {
           Permission.update(Role.users()),
         ]
       );
-      return storage.getFileView(APPWRITE_BUCKET_ID, response.$id).toString();
+      return storage.getFileDownload(APPWRITE_BUCKET_ID, response.$id).toString();
     } catch (error) {
       console.error('Error uploading SVG:', error);
       throw new Error('Failed to upload SVG. Please try again.');
@@ -378,6 +385,7 @@ const Services: React.FC = () => {
             setName('');
             setIconUrl('');
             setPrice('');
+            setProjectId('');
             setUploadedSvg(null);
             setShowModal(true);
           }}
@@ -458,6 +466,19 @@ const Services: React.FC = () => {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="projectId">Project ID</Label>
+              <Input
+                id="projectId"
+                type="number"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                required
+                className="w-full"
+                placeholder="Enter project ID"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="icon_url">Icon</Label>
               <div className="flex flex-col space-y-4">
                 <div className="flex items-center space-x-4">
@@ -472,17 +493,17 @@ const Services: React.FC = () => {
                       <FaImage className="w-8 h-8 text-[#004aad]" />
                     )}
                   </div>
-                  {/* <div className="flex-1">
+                  <div className="flex-1">
                     <Input
                       id="icon_url"
                       value={iconUrl}
                       onChange={(e) => setIconUrl(e.target.value)}
-                      placeholder="Enter icon URL"
+                      placeholder="Paste icon URL (e.g. https://icons8.com/icon/16713/whatsapp)"
                       className="w-full"
                     />
-                  </div> */}
+                  </div>
                 </div>
-                <div>
+                <div className="flex space-x-2">
                   <Button
                     type="button"
                     variant="outline"

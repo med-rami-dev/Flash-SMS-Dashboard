@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarHeader, SidebarTrigger } from '@/components/ui/sidebar';
-import { LayoutDashboard, Globe, Package, Newspaper, LogOut, Phone } from 'lucide-react';
+import { LayoutDashboard, Globe, Package, Newspaper, LogOut, Phone, HelpCircle } from 'lucide-react';
 
 type NavLinkProps = {
   to: string;
@@ -19,8 +19,8 @@ const NavLink: React.FC<NavLinkProps> = ({ to, children, currentPath, icon }) =>
     <Link
       to={to}
       className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${isActive
-          ? 'bg-secondary text-white font-medium shadow-sm'
-          : 'text-sidebar-foreground hover:bg-white/10 hover:text-white'
+        ? 'bg-secondary text-white font-medium shadow-sm'
+        : 'text-sidebar-foreground hover:bg-white/10 hover:text-white'
         }`}
     >
       {icon}
@@ -67,6 +67,9 @@ const DashboardLayout = () => {
               </NavLink>
               <NavLink to="/dashboard/offers-news" currentPath={location.pathname} icon={<Newspaper className="w-5 h-5" />}>
                 Offers & News
+              </NavLink>
+              <NavLink to="/dashboard/qa" currentPath={location.pathname} icon={<HelpCircle className="w-5 h-5" />}>
+                Q&A
               </NavLink>
             </nav>
           </SidebarContent>
