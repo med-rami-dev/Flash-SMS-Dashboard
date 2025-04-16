@@ -75,7 +75,7 @@ const DashboardLayout = () => {
           </SidebarContent>
           <div className="mt-auto p-4 border-t border-white/10">
             <div className="mb-4 px-3">
-              <div className="text-sm font-medium text-white">{user?.email}</div>
+              <div className="text-sm font-medium text-white">{user?.name}</div>
               <div className="text-xs text-white/70">Administrator</div>
             </div>
             <Button

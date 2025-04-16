@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { storage, databases } from '@/integrations/appwrite/client';
 import { ID, Models, Permission, Role } from 'appwrite';
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import { useToast } from "@/hooks/use-toast";
 
 // Appwrite constants
 const APPWRITE_BUCKET_ID = 'media';
@@ -50,9 +51,10 @@ interface OfferNews extends Models.Document {
   title: string;
   content: string;
   created_at: Date;
-  image_url: string;
+  image_id: string; // Changed from image_url to image_id
   is_offer: boolean;
   btn_url_action: string;
+  btn_text: string;
 }
 
 const OffersNews: React.FC = () => {
@@ -65,12 +67,18 @@ const OffersNews: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [isOffer, setIsOffer] = useState(false);
   const [btnUrlAction, setBtnUrlAction] = useState('');
+  const [btnText, setBtnText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
+  const { toast } = useToast();
+  const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const fetchItems = async () => {
     try {
+      setLoading(true);
       const response = await databases.listDocuments<OfferNews>(
         '67f741820018b85a6f1a',
         '67f74190003a8b05be67'
@@ -79,6 +87,8 @@ const OffersNews: React.FC = () => {
     } catch (error) {
       console.error('Error fetching items:', error);
       setError('Failed to fetch items. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -107,7 +117,6 @@ const OffersNews: React.FC = () => {
           Permission.write(Role.users()), // Grants write access to all authenticated users
           Permission.delete(Role.users()), // Grants delete access to all authenticated users
           Permission.update(Role.users()), // Grants update access to all authenticated users
-
         ]
       );
       return response.$id;
@@ -119,8 +128,8 @@ const OffersNews: React.FC = () => {
     }
   };
 
-
   const getImageUrl = (fileId: string): string => {
+    if (!fileId) return '';
     try {
       const fileView = storage.getFileView(APPWRITE_BUCKET_ID, fileId);
       return fileView.toString();
@@ -136,12 +145,11 @@ const OffersNews: React.FC = () => {
 
     try {
       setError(null);
-      let imageUrl = '';
+      let imageId = '';
 
       if (imageFile) {
         try {
-          const fileId = await uploadImageToAppwrite(imageFile);
-          imageUrl = getImageUrl(fileId);
+          imageId = await uploadImageToAppwrite(imageFile);
         } catch (error) {
           setError('Failed to upload image. Please try again.');
           return;
@@ -152,9 +160,10 @@ const OffersNews: React.FC = () => {
         title,
         content,
         created_at: new Date().toISOString(),
-        image_url: imageUrl,
+        image_id: imageId, // Store the file ID instead of URL
         is_offer: isOffer,
         btn_url_action: btnUrlAction,
+        btn_text: btnText,
       };
 
       await databases.createDocument(
@@ -170,10 +179,22 @@ const OffersNews: React.FC = () => {
       setImagePreview(null);
       setIsOffer(false);
       setBtnUrlAction('');
+      setBtnText('');
+      setShowModal(false);
       fetchItems();
+
+      toast({
+        title: "Success",
+        description: `${isOffer ? 'Offer' : 'News'} added successfully`,
+      });
     } catch (error) {
       console.error('Error adding item:', error);
       setError('Failed to add item. Please try again.');
+      toast({
+        title: "Error",
+        description: "Failed to add item. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -181,9 +202,15 @@ const OffersNews: React.FC = () => {
     setEditingItem(item);
     setTitle(item.title);
     setContent(item.content);
-    setImagePreview(item.image_url);
+    // If there's an image_id, generate the preview URL
+    if (item.image_id) {
+      setImagePreview(getImageUrl(item.image_id));
+    } else {
+      setImagePreview(null);
+    }
     setIsOffer(item.is_offer);
     setBtnUrlAction(item.btn_url_action);
+    setBtnText(item.btn_text);
     setShowModal(true);
   };
 
@@ -193,12 +220,11 @@ const OffersNews: React.FC = () => {
 
     try {
       setError(null);
-      let imageUrl = editingItem.image_url;
+      let imageId = editingItem.image_id;
 
       if (imageFile) {
         try {
-          const fileId = await uploadImageToAppwrite(imageFile);
-          imageUrl = getImageUrl(fileId);
+          imageId = await uploadImageToAppwrite(imageFile);
         } catch (error) {
           setError('Failed to upload image. Please try again.');
           return;
@@ -212,9 +238,10 @@ const OffersNews: React.FC = () => {
         {
           title,
           content,
-          image_url: imageUrl,
+          image_id: imageId, // Store the file ID instead of URL
           is_offer: isOffer,
           btn_url_action: btnUrlAction,
+          btn_text: btnText,
           updated_at: new Date().toISOString()
         }
       );
@@ -227,10 +254,21 @@ const OffersNews: React.FC = () => {
       setImagePreview(null);
       setIsOffer(false);
       setBtnUrlAction('');
+      setBtnText('');
       fetchItems();
+
+      toast({
+        title: "Success",
+        description: `${isOffer ? 'Offer' : 'News'} updated successfully`,
+      });
     } catch (error) {
       console.error('Error updating item:', error);
       setError('Failed to update item. Please try again.');
+      toast({
+        title: "Error",
+        description: "Failed to update item. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -238,15 +276,96 @@ const OffersNews: React.FC = () => {
     if (!currentUser) return;
 
     try {
+      // First get the document to access the image_id
+      const document = await databases.getDocument(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67',
+        id
+      );
+
+      // If there's an image_id, delete the image from storage
+      if (document.image_id) {
+        try {
+          await storage.deleteFile(APPWRITE_BUCKET_ID, document.image_id);
+        } catch (error) {
+          console.error('Error deleting image from storage:', error);
+          // Continue even if image deletion fails
+        }
+      }
+
+      // Delete the document from database
       await databases.deleteDocument(
         '67f741820018b85a6f1a',
         '67f74190003a8b05be67',
         id
       );
+
       fetchItems();
+
+      toast({
+        title: "Success",
+        description: `${document.is_offer ? 'Offer' : 'News'} deleted successfully`,
+      });
     } catch (error) {
       console.error('Error deleting item:', error);
       setError('Failed to delete item. Please try again.');
+      toast({
+        title: "Error",
+        description: "Failed to delete item. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const initiateDelete = (id: string) => {
+    setDeleteItemId(id);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteItemId || !currentUser) return;
+
+    try {
+      // First get the document to access the image_id
+      const document = await databases.getDocument(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67',
+        deleteItemId
+      );
+
+      // If there's an image_id, delete the image from storage
+      if (document.image_id) {
+        try {
+          await storage.deleteFile(APPWRITE_BUCKET_ID, document.image_id);
+        } catch (error) {
+          console.error('Error deleting image from storage:', error);
+          // Continue even if image deletion fails
+        }
+      }
+
+      // Delete the document from database
+      await databases.deleteDocument(
+        '67f741820018b85a6f1a',
+        '67f74190003a8b05be67',
+        deleteItemId
+      );
+
+      fetchItems();
+      setShowDeleteDialog(false);
+      setDeleteItemId(null);
+
+      toast({
+        title: "Success",
+        description: `${document.is_offer ? 'Offer' : 'News'} deleted successfully`,
+      });
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      setError('Failed to delete item. Please try again.');
+      toast({
+        title: "Error",
+        description: "Failed to delete item. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -255,6 +374,14 @@ const OffersNews: React.FC = () => {
       <div className="p-4 text-red-500">
         <h2>Error</h2>
         <p>{error}</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="container mx-auto p-6 flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#004aad]"></div>
       </div>
     );
   }
@@ -275,10 +402,10 @@ const OffersNews: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {items.map((item) => (
             <Card key={item.$id} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
-              {item.image_url && (
+              {item.image_id && (
                 <div className="relative h-48">
                   <img
-                    src={item.image_url}
+                    src={getImageUrl(item.image_id)}
                     alt={item.title}
                     className="w-full h-full object-cover"
                   />
@@ -293,6 +420,18 @@ const OffersNews: React.FC = () => {
               <CardContent className="p-6">
                 <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
                 <p className="text-gray-600 mb-4 line-clamp-3">{item.content}</p>
+                {item.btn_text && item.btn_url_action && (
+                  <div className="mb-4">
+                    <a
+                      href={item.btn_url_action}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block px-4 py-2 bg-[#004aad] text-white rounded hover:bg-[#003d8a] transition-colors"
+                    >
+                      {item.btn_text}
+                    </a>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-500">
                     {new Date(item.created_at).toLocaleDateString()}
@@ -310,7 +449,7 @@ const OffersNews: React.FC = () => {
                       variant="outline"
                       size="icon"
                       className="hover:bg-red-50 hover:text-red-600"
-                      onClick={() => handleDelete(item.$id)}
+                      onClick={() => initiateDelete(item.$id)}
                     >
                       <FaTrash className="w-4 h-4" />
                     </Button>
@@ -336,7 +475,64 @@ const OffersNews: React.FC = () => {
                     id="title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    required
+                    
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="content">Content</Label>
+                  <Textarea
+                    id="content"
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    
+                    className="min-h-[150px]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="isOffer"
+                      checked={isOffer}
+                      onCheckedChange={setIsOffer}
+                    />
+                    <Label htmlFor="isOffer">This is an offer</Label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="image">Image</Label>
+                  <div className="flex items-center space-x-4">
+                    <Input
+                      id="image"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      disabled={uploading}
+                      className="flex-1"
+                    />
+                    {imagePreview && (
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-20 h-20 object-cover rounded-lg"
+                      />
+                    )}
+                  </div>
+                  {uploading && (
+                    <div className="text-sm text-gray-500">Uploading image...</div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="btnText">Button Text</Label>
+                  <Input
+                    id="btnText"
+                    value={btnText}
+                    onChange={(e) => setBtnText(e.target.value)}
+                    placeholder="e.g., Learn More, Get Started"
                     className="w-full"
                   />
                 </div>
@@ -345,57 +541,12 @@ const OffersNews: React.FC = () => {
                   <Label htmlFor="btnUrlAction">Button URL Action</Label>
                   <Input
                     id="btnUrlAction"
-                    type="url"
                     value={btnUrlAction}
                     onChange={(e) => setBtnUrlAction(e.target.value)}
                     placeholder="https://example.com"
                     className="w-full"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="content">Content</Label>
-                <Textarea
-                  id="content"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  required
-                  className="min-h-[150px]"
-                />
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="isOffer"
-                  checked={isOffer}
-                  onCheckedChange={setIsOffer}
-                />
-                <Label htmlFor="isOffer">This is an offer</Label>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="image">Image</Label>
-                <div className="flex items-center space-x-4">
-                  <Input
-                    id="image"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    disabled={uploading}
-                    className="flex-1"
-                  />
-                  {imagePreview && (
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-20 h-20 object-cover rounded-lg"
-                    />
-                  )}
-                </div>
-                {uploading && (
-                  <div className="text-sm text-gray-500">Uploading image...</div>
-                )}
               </div>
 
               <div className="flex justify-end space-x-4">
@@ -415,6 +566,32 @@ const OffersNews: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete confirmation dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Confirm Deletion</DialogTitle>
+            </DialogHeader>
+            <p className="py-4">Are you sure you want to delete this item? This action cannot be undone.</p>
+            <div className="flex justify-end space-x-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowDeleteDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={confirmDelete}
+              >
+                Delete
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

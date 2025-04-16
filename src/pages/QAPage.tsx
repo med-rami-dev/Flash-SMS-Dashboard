@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { QAItem } from '../types/qa';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Filter } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -16,8 +16,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { createQA, getQAs, updateQA, deleteQA } from '@/integrations/appwrite/qa';
 import { createCategory, getCategories, updateCategory, deleteCategory, Category } from '@/integrations/appwrite/categories';
+import { motion, AnimatePresence } from 'framer-motion';
 
-const QAPage: React.FC = () => {
+const QAPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -288,266 +289,293 @@ const QAPage: React.FC = () => {
     });
 
     return (
-        <div className="container mx-auto px-4 py-8">
-            <div className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold text-[#004aad]">Frequently Asked Questions</h1>
-                <div className="flex gap-2">
-                    <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-                        <DialogTrigger asChild>
-                            <Button variant="outline" className="flex items-center gap-2 border-[#004aad] text-[#004aad] hover:bg-[#004aad]/10">
-                                <Plus className="w-4 h-4" />
-                                New Category
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-[425px]">
-                            <DialogHeader>
-                                <DialogTitle className="text-[#004aad]">{editingCategory ? 'Edit' : 'Create New'} Category</DialogTitle>
-                                <DialogDescription>
-                                    {editingCategory ? 'Update' : 'Add'} a category to organize your Q&A items
-                                </DialogDescription>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="categoryName">Category Name</Label>
-                                    <Input
-                                        id="categoryName"
-                                        value={newCategory.name}
-                                        onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
-                                        placeholder="Enter category name"
-                                    />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="categoryDescription">Description</Label>
-                                    <Textarea
-                                        id="categoryDescription"
-                                        value={newCategory.description}
-                                        onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
-                                        placeholder="Enter category description"
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex justify-end space-x-4">
-                                <Button variant="outline" onClick={() => {
-                                    setIsCategoryDialogOpen(false);
-                                    setEditingCategory(null);
-                                    setNewCategory({
-                                        name: '',
-                                        description: '',
-                                        isActive: true,
-                                    });
-                                }}>
-                                    Cancel
-                                </Button>
-                                <Button onClick={editingCategory ? handleUpdateCategory : handleCreateCategory}>
-                                    {editingCategory ? 'Update' : 'Create'}
-                                </Button>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
+        <div className="container mx-auto px-4 py-8 max-w-7xl">
+            <div className="flex flex-col gap-8">
+                {/* Header Section */}
+                <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                        <h1 className="text-4xl font-bold bg-gradient-to-r from-[#004aad] to-[#0066cc] bg-clip-text text-transparent">
+                            Questions & Answers 
+                        </h1>
+                        <div className="flex gap-2">
+                            <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="outline" className="flex items-center gap-2 border-[#004aad] text-[#004aad] hover:bg-[#004aad]/10">
+                                        <Plus className="w-4 h-4" />
+                                        New Category
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-[425px]">
+                                    <DialogHeader>
+                                        <DialogTitle className="text-[#004aad]">{editingCategory ? 'Edit' : 'Create New'} Category</DialogTitle>
+                                        <DialogDescription>
+                                            {editingCategory ? 'Update' : 'Add'} a category to organize your Q&A items
+                                        </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="grid gap-4 py-4">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="categoryName">Category Name</Label>
+                                            <Input
+                                                id="categoryName"
+                                                value={newCategory.name}
+                                                onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                                                placeholder="Enter category name"
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="categoryDescription">Description</Label>
+                                            <Textarea
+                                                id="categoryDescription"
+                                                value={newCategory.description}
+                                                onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
+                                                placeholder="Enter category description"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <Button variant="outline" onClick={() => {
+                                            setIsCategoryDialogOpen(false);
+                                            setEditingCategory(null);
+                                            setNewCategory({
+                                                name: '',
+                                                description: '',
+                                                isActive: true,
+                                            });
+                                        }}>
+                                            Cancel
+                                        </Button>
+                                        <Button onClick={editingCategory ? handleUpdateCategory : handleCreateCategory}>
+                                            {editingCategory ? 'Update' : 'Create'}
+                                        </Button>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
 
-                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                        <DialogTrigger asChild>
-                            <Button className="flex items-center gap-2 bg-[#004aad] hover:bg-[#003d8a] text-white">
-                                <Plus className="w-4 h-4" />
-                                New Q&A
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-[425px]">
-                            <DialogHeader>
-                                <DialogTitle className="text-[#004aad]">{editingQA ? 'Edit' : 'Create New'} Q&A</DialogTitle>
-                                <DialogDescription>
-                                    {editingQA ? 'Update' : 'Add'} a new question and answer to your knowledge base
-                                </DialogDescription>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="question">Question</Label>
-                                    <Input
-                                        id="question"
-                                        value={newQA.question}
-                                        onChange={(e) => setNewQA({ ...newQA, question: e.target.value })}
-                                        placeholder="Enter the question"
-                                    />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="answer">Answer</Label>
-                                    <Textarea
-                                        id="answer"
-                                        value={newQA.answer}
-                                        onChange={(e) => setNewQA({ ...newQA, answer: e.target.value })}
-                                        placeholder="Enter the answer"
-                                        className="min-h-[100px]"
-                                    />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="category">Category</Label>
-                                    <select
-                                        id="category"
-                                        value={newQA.category}
-                                        onChange={(e) => setNewQA({ ...newQA, category: e.target.value })}
-                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {categories.map(category => (
-                                            <option key={category.id} value={category.name}>
-                                                {category.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="tags">Tags (comma separated)</Label>
-                                    <Input
-                                        id="tags"
-                                        value={newQA.tags.join(', ')}
-                                        onChange={(e) => setNewQA({ ...newQA, tags: e.target.value.split(',').map(tag => tag.trim()) })}
-                                        placeholder="Enter tags separated by commas"
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex justify-end space-x-4">
-                                <Button variant="outline" onClick={() => {
-                                    setIsDialogOpen(false);
-                                    setEditingQA(null);
-                                    setNewQA({
-                                        question: '',
-                                        answer: '',
-                                        category: 'General',
-                                        tags: [],
-                                        isActive: true,
-                                    });
-                                }}>
-                                    Cancel
-                                </Button>
-                                <Button onClick={editingQA ? handleUpdateQA : handleCreateQA}>
-                                    {editingQA ? 'Update' : 'Create'}
-                                </Button>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
+                            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                                <DialogTrigger asChild>
+                                    <Button className="flex items-center gap-2 bg-[#004aad] hover:bg-[#003d8a] text-white">
+                                        <Plus className="w-4 h-4" />
+                                        New Q&A
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-[425px]">
+                                    <DialogHeader>
+                                        <DialogTitle className="text-[#004aad]">{editingQA ? 'Edit' : 'Create New'} Q&A</DialogTitle>
+                                        <DialogDescription>
+                                            {editingQA ? 'Update' : 'Add'} a new question and answer to your knowledge base
+                                        </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="grid gap-4 py-4">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="question">Question</Label>
+                                            <Input
+                                                id="question"
+                                                value={newQA.question}
+                                                onChange={(e) => setNewQA({ ...newQA, question: e.target.value })}
+                                                placeholder="Enter the question"
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="answer">Answer</Label>
+                                            <Textarea
+                                                id="answer"
+                                                value={newQA.answer}
+                                                onChange={(e) => setNewQA({ ...newQA, answer: e.target.value })}
+                                                placeholder="Enter the answer"
+                                                className="min-h-[100px]"
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="category">Category</Label>
+                                            <select
+                                                id="category"
+                                                value={newQA.category}
+                                                onChange={(e) => setNewQA({ ...newQA, category: e.target.value })}
+                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {categories.map(category => (
+                                                    <option key={category.id} value={category.name}>
+                                                        {category.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="tags">Tags (comma separated)</Label>
+                                            <Input
+                                                id="tags"
+                                                value={newQA.tags.join(', ')}
+                                                onChange={(e) => setNewQA({ ...newQA, tags: e.target.value.split(',').map(tag => tag.trim()) })}
+                                                placeholder="Enter tags separated by commas"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <Button variant="outline" onClick={() => {
+                                            setIsDialogOpen(false);
+                                            setEditingQA(null);
+                                            setNewQA({
+                                                question: '',
+                                                answer: '',
+                                                category: 'General',
+                                                tags: [],
+                                                isActive: true,
+                                            });
+                                        }}>
+                                            Cancel
+                                        </Button>
+                                        <Button onClick={editingQA ? handleUpdateQA : handleCreateQA}>
+                                            {editingQA ? 'Update' : 'Create'}
+                                        </Button>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {/* Categories List */}
-            <div className="mb-8">
-                <h2 className="text-xl font-semibold mb-4 text-[#004aad]">Categories</h2>
+                {/* Search and Filter Section */}
+                <div className="flex flex-col md:flex-row gap-4 items-center bg-white p-4 rounded-xl shadow-sm">
+                    <div className="relative flex-1 w-full">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <Input
+                            type="text"
+                            placeholder="Search questions..."
+                            className="pl-10 w-full"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                        <Filter className="w-4 h-4 text-gray-400" />
+                        <select
+                            className="p-2 border rounded-lg focus:border-[#004aad] focus:ring-1 focus:ring-[#004aad] bg-white"
+                            value={selectedCategory}
+                            onChange={(e) => setSelectedCategory(e.target.value)}
+                        >
+                            <option value="all">All Categories</option>
+                            {categories.map(category => (
+                                <option key={category.id} value={category.name}>
+                                    {category.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Categories Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {categories.map(category => (
-                        <div
+                        <motion.div
                             key={category.id}
-                            className="border rounded-lg p-4 flex justify-between items-center bg-gradient-to-br from-white to-gray-50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] transition-all duration-300 transform hover:-translate-y-1"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-gradient-to-br from-[#004aad]/5 to-[#004aad]/10 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-300 border border-[#004aad]/10"
                         >
-                            <div>
-                                <h3 className="font-medium text-[#004aad]">{category.name}</h3>
-                                {category.description && (
-                                    <p className="text-sm text-gray-600 mt-1">{category.description}</p>
-                                )}
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h3 className="font-semibold text-lg text-[#004aad]">{category.name}</h3>
+                                    {category.description && (
+                                        <p className="text-sm text-gray-600 mt-1">{category.description}</p>
+                                    )}
+                                </div>
+                                <div className="flex gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleEditCategory(category)}
+                                        className="text-[#004aad] hover:bg-[#004aad]/20 rounded-full"
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleDeleteCategory(category.id)}
+                                        className="text-red-500 hover:bg-red-500/20 rounded-full"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                </div>
                             </div>
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleEditCategory(category)}
-                                    className="text-[#004aad] hover:bg-[#004aad]/10 rounded-full"
-                                >
-                                    <Pencil className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDeleteCategory(category.id)}
-                                    className="text-red-500 hover:bg-red-500/10 rounded-full"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
-                            </div>
-                        </div>
+                        </motion.div>
                     ))}
                 </div>
-            </div>
 
-            {/* Search and Filter */}
-            <div className="mb-8 flex flex-col md:flex-row gap-4">
-                <input
-                    type="text"
-                    placeholder="Search questions..."
-                    className="flex-1 p-2 border rounded-lg focus:border-[#004aad] focus:ring-1 focus:ring-[#004aad] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.05)]"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <select
-                    className="p-2 border rounded-lg focus:border-[#004aad] focus:ring-1 focus:ring-[#004aad] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.05)]"
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                >
-                    <option value="all">All Categories</option>
-                    {categories.map(category => (
-                        <option key={category.id} value={category.name}>
-                            {category.name}
-                        </option>
-                    ))}
-                </select>
-            </div>
-
-            {/* Loading State */}
-            {isLoading && (
-                <div className="flex justify-center items-center h-64">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#004aad]"></div>
-                </div>
-            )}
-
-            {/* Q&A List */}
-            <div className="space-y-4">
-                {filteredQA.map(item => (
-                    <div
-                        key={item.id}
-                        className="border rounded-lg p-4 bg-gradient-to-br from-white to-gray-50 shadow-[0_4px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] transition-all duration-300 transform hover:-translate-y-1"
-                    >
-                        <div className="flex justify-between items-center">
-                            <div
-                                className="flex-1 cursor-pointer"
-                                onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                            >
-                                <h3 className="text-lg font-medium text-[#004aad]">{item.question}</h3>
-                                <span className="text-sm text-gray-600">{item.category}</span>
+                {/* Q&A List */}
+                <div className="space-y-4">
+                    <AnimatePresence>
+                        {isLoading ? (
+                            <div className="flex justify-center items-center h-64">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#004aad]"></div>
                             </div>
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleEditQA(item)}
-                                    className="text-[#004aad] hover:bg-[#004aad]/10 rounded-full"
+                        ) : (
+                            filteredQA.map(item => (
+                                <motion.div
+                                    key={item.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -20 }}
+                                    className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-300"
                                 >
-                                    <Pencil className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDeleteQA(item.id)}
-                                    className="text-red-500 hover:bg-red-500/10 rounded-full"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
-                            </div>
-                        </div>
-                        {expandedId === item.id && (
-                            <div className="mt-4">
-                                <p className="text-gray-700">{item.answer}</p>
-                                {item.tags.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        {item.tags.map(tag => (
-                                            <span
-                                                key={tag}
-                                                className="px-2 py-1 bg-[#004aad]/10 text-[#004aad] rounded-full text-sm shadow-[0_2px_4px_rgba(0,0,0,0.05)]"
+                                    <div className="flex justify-between items-start">
+                                        <div
+                                            className="flex-1 cursor-pointer"
+                                            onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-lg font-semibold text-[#004aad]">{item.question}</h3>
+                                                <span className="text-xs px-2 py-1 bg-[#004aad]/10 text-[#004aad] rounded-full">
+                                                    {item.category}
+                                                </span>
+                                            </div>
+                                            {expandedId === item.id && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0 }}
+                                                    animate={{ opacity: 1, height: 'auto' }}
+                                                    exit={{ opacity: 0, height: 0 }}
+                                                    className="mt-4"
+                                                >
+                                                    <p className="text-gray-700">{item.answer}</p>
+                                                    {item.tags.length > 0 && (
+                                                        <div className="mt-4 flex flex-wrap gap-2">
+                                                            {item.tags.map(tag => (
+                                                                <span
+                                                                    key={tag}
+                                                                    className="px-3 py-1 bg-[#004aad]/10 text-[#004aad] rounded-full text-sm"
+                                                                >
+                                                                    {tag}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </motion.div>
+                                            )}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => handleEditQA(item)}
+                                                className="text-[#004aad] hover:bg-[#004aad]/10 rounded-full"
                                             >
-                                                {tag}
-                                            </span>
-                                        ))}
+                                                <Pencil className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => handleDeleteQA(item.id)}
+                                                className="text-red-500 hover:bg-red-500/10 rounded-full"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
-                                )}
-                            </div>
+                                </motion.div>
+                            ))
                         )}
-                    </div>
-                ))}
+                    </AnimatePresence>
+                </div>
             </div>
         </div>
     );

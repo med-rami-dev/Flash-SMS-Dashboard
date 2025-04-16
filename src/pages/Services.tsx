@@ -243,6 +243,31 @@ const Services: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      // First get the document to access the icon_url
+      const document = await databases.getDocument(
+        '67f741820018b85a6f1a',
+        'services',
+        id
+      );
+
+      // If there's an icon URL, delete the icon from storage first
+      if (document.icon_url) {
+        try {
+          // The icon_url is the full URL, we need to extract the file ID
+          // The URL format is: https://cloud.appwrite.io/v1/storage/buckets/[BUCKET_ID]/files/[FILE_ID]/download
+          const urlParts = document.icon_url.split('/');
+          const fileId = urlParts[urlParts.length - 2]; // The file ID is the second to last part
+
+          if (fileId) {
+            await storage.deleteFile(APPWRITE_BUCKET_ID, fileId);
+          }
+        } catch (error) {
+          console.error('Error deleting icon from storage:', error);
+          // Continue even if icon deletion fails
+        }
+      }
+
+      // Delete the document from database
       await databases.deleteDocument(
         '67f741820018b85a6f1a',
         'services',
@@ -415,7 +440,7 @@ const Services: React.FC = () => {
                   <div>
                     <h3 className="text-xl font-semibold">{service.name}</h3>
                     <p className="text-lg font-semibold text-[#004aad]">
-                      {service.price.toFixed(2)} Coins
+                      {service.price} Coins
                     </p>
                   </div>
                 </div>

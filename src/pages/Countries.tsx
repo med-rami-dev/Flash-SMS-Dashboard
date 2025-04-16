@@ -282,7 +282,7 @@ const Countries: React.FC = () => {
                   Created: {new Date(country.created_at).toLocaleDateString()}
                 </span>
                 <span className="text-lg font-semibold text-[#004aad]">
-                  {parseFloat(country.price).toFixed(2)} Coins
+                  {country.price} Coins
                 </span>
               </div>
             </CardContent>
