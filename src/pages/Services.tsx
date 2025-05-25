@@ -22,7 +22,7 @@ interface Service extends Models.Document {
   icon_url: string;
   projectId: number;
   price: number;
-  country_prices?: Record<string, number>;
+  country_prices?: Record<string, number>; // Key will be ISO code instead of document ID
   created_at: Date;
   updated_at: Date;
 }
@@ -66,6 +66,7 @@ const Services: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [countryPrices, setCountryPrices] = useState<Record<string, string>>({});
   const [selectedCountries, setSelectedCountries] = useState<Record<string, boolean>>({});
+  const [isoToIdMap, setIsoToIdMap] = useState<Record<string, string>>({});
 
   // Get all Phosphor icons
   const phosphorIcons: PhosphorIcon[] = Object.entries(PhosphorIcons)
@@ -81,6 +82,18 @@ const Services: React.FC = () => {
       name,
       Icon: Icon as PhosphorIconComponent
     }));
+
+  // Helper function to get ISO code from country ID
+  const getIsoCodeFromId = (countryId: string): string | undefined => {
+    const country = countries.find(c => c.$id === countryId);
+    return country?.iso_code;
+  };
+
+  // Helper function to get country ID from ISO code
+  const getIdFromIsoCode = (isoCode: string): string | undefined => {
+    const country = countries.find(c => c.iso_code === isoCode);
+    return country?.$id;
+  };
 
   const fetchServices = async () => {
     try {
@@ -116,7 +129,15 @@ const Services: React.FC = () => {
           Query.orderAsc('name')
         ]
       );
-      setCountries(response.documents as Country[]);
+      const countriesList = response.documents as Country[];
+      setCountries(countriesList);
+
+      // Create ISO code to ID mapping
+      const isoMapping: Record<string, string> = {};
+      countriesList.forEach(country => {
+        isoMapping[country.iso_code] = country.$id;
+      });
+      setIsoToIdMap(isoMapping);
     } catch (err: any) {
       console.error('Error fetching countries:', err);
       toast({
@@ -151,7 +172,12 @@ const Services: React.FC = () => {
       const countryPricingData: Record<string, number> = {};
       Object.entries(selectedCountries).forEach(([countryId, isSelected]) => {
         if (isSelected && countryPrices[countryId]) {
-          countryPricingData[countryId] = parseFloat(countryPrices[countryId]);
+          // Find the country by ID to get its ISO code
+          const country = countries.find(c => c.$id === countryId);
+          if (country) {
+            // Use ISO code as the key instead of document ID
+            countryPricingData[country.iso_code] = parseFloat(countryPrices[countryId]);
+          }
         }
       });
 
@@ -203,31 +229,52 @@ const Services: React.FC = () => {
     }
   };
 
-  const handleEdit = (service: Service) => {
-    setEditingService(service);
-    setName(service.name);
-    setIconUrl(service.icon_url);
-    setPrice(service.price.toString());
-    setProjectId(service.projectId.toString());
+  const fetchServiceDetails = async (id: string) => {
+    try {
+      const document = await databases.getDocument(
+        '67f741820018b85a6f1a',
+        'services',
+        id
+      );
 
-    // Initialize country prices and selected countries from service data
-    const countryPricesData: Record<string, string> = {};
-    const selectedCountriesData: Record<string, boolean> = {};
+      if (document) {
+        setEditingService(document as Service);
+        setName(document.name);
+        setIconUrl(document.icon_url);
+        setPrice(document.price.toString());
+        setProjectId(document.projectId.toString());
 
-    if (service.country_prices) {
-      // Parse the JSON string to get the country prices object
-      const countryPricesObj = typeof service.country_prices === 'string'
-        ? JSON.parse(service.country_prices)
-        : service.country_prices;
+        // Initialize country prices and selected countries from service data
+        const countryPricesData: Record<string, string> = {};
+        const selectedCountriesData: Record<string, boolean> = {};
 
-      Object.entries(countryPricesObj).forEach(([countryId, price]) => {
-        countryPricesData[countryId] = price.toString();
-        selectedCountriesData[countryId] = true;
-      });
+        if (document.country_prices) {
+          // Parse the JSON string to get the country prices object
+          const countryPricesObj = typeof document.country_prices === 'string'
+            ? JSON.parse(document.country_prices)
+            : document.country_prices;
+
+          // Convert ISO codes back to document IDs for the form
+          Object.entries(countryPricesObj).forEach(([isoCode, price]) => {
+            // Find the country with this ISO code
+            const country = countries.find(c => c.iso_code === isoCode);
+            if (country) {
+              countryPricesData[country.$id] = price.toString();
+              selectedCountriesData[country.$id] = true;
+            }
+          });
+        }
+
+        setCountryPrices(countryPricesData);
+        setSelectedCountries(selectedCountriesData);
+      }
+    } catch (error) {
+      console.error('Error fetching service details:', error);
     }
+  };
 
-    setCountryPrices(countryPricesData);
-    setSelectedCountries(selectedCountriesData);
+  const handleEdit = (service: Service) => {
+    fetchServiceDetails(service.$id);
     setShowModal(true);
   };
 
@@ -250,7 +297,12 @@ const Services: React.FC = () => {
       const countryPricingData: Record<string, number> = {};
       Object.entries(selectedCountries).forEach(([countryId, isSelected]) => {
         if (isSelected && countryPrices[countryId]) {
-          countryPricingData[countryId] = parseFloat(countryPrices[countryId]);
+          // Find the country by ID to get its ISO code
+          const country = countries.find(c => c.$id === countryId);
+          if (country) {
+            // Use ISO code as the key instead of document ID
+            countryPricingData[country.iso_code] = parseFloat(countryPrices[countryId]);
+          }
         }
       });
 
@@ -516,11 +568,30 @@ const Services: React.FC = () => {
                       {service.price} Coins
                     </p>
                     {service.country_prices && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        {Object.keys(typeof service.country_prices === 'string'
-                          ? JSON.parse(service.country_prices)
-                          : service.country_prices).length} country pecific prices
-                      </p>
+                      <div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {Object.keys(typeof service.country_prices === 'string'
+                            ? JSON.parse(service.country_prices)
+                            : service.country_prices).length} country specific prices
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {Object.entries(typeof service.country_prices === 'string'
+                            ? JSON.parse(service.country_prices)
+                            : service.country_prices).slice(0, 3).map(([isoCode, price]) => (
+                              <div key={isoCode} className="inline-flex items-center bg-gray-100 rounded px-1.5 py-0.5">
+                                <ReactCountryFlag countryCode={isoCode} svg style={{ width: '1em', height: '1em' }} />
+                                <span className="text-xs ml-1">{price}</span>
+                              </div>
+                            ))}
+                          {Object.keys(typeof service.country_prices === 'string'
+                            ? JSON.parse(service.country_prices)
+                            : service.country_prices).length > 3 && (
+                              <span className="text-xs text-gray-500">+{Object.keys(typeof service.country_prices === 'string'
+                                ? JSON.parse(service.country_prices)
+                                : service.country_prices).length - 3} more</span>
+                            )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -644,7 +715,7 @@ const Services: React.FC = () => {
                       <div className="flex items-center h-4">
                         <input
                           type="checkbox"
-                          id={`country-${country.$id}`}
+                          id={`country-${country.iso_code}`}
                           className="h-4 w-4 rounded border-gray-300 text-[#004aad] focus:ring-[#004aad]"
                           checked={!!selectedCountries[country.$id]}
                           onChange={(e) => {
@@ -655,7 +726,7 @@ const Services: React.FC = () => {
                           }}
                         />
                       </div>
-                      <label htmlFor={`country-${country.$id}`} className="text-sm font-medium text-gray-700 cursor-pointer flex items-center space-x-2">
+                      <label htmlFor={`country-${country.iso_code}`} className="text-sm font-medium text-gray-700 cursor-pointer flex items-center space-x-2">
                         <div className="flex items-center justify-center">
                           <ReactCountryFlag
                             countryCode={country.iso_code}
@@ -668,6 +739,7 @@ const Services: React.FC = () => {
                           />
                         </div>
                         <span>{country.name}</span>
+                        <span className="text-xs text-gray-500">({country.iso_code})</span>
                       </label>
                     </div>
                     <div className="w-3/5">
