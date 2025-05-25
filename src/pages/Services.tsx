@@ -519,7 +519,7 @@ const Services: React.FC = () => {
                       <p className="text-xs text-gray-500 mt-1">
                         {Object.keys(typeof service.country_prices === 'string'
                           ? JSON.parse(service.country_prices)
-                          : service.country_prices).length} Set a Country Specific Price
+                          : service.country_prices).length} country pecific prices
                       </p>
                     )}
                   </div>
@@ -636,7 +636,7 @@ const Services: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label>Country-Specific Pricing</Label>
+              <Label>Country Based Price</Label>
               <div className="border rounded-md p-4 max-h-60 overflow-y-auto">
                 {countries.map((country) => (
                   <div key={country.$id} className="flex items-center space-x-2 py-2 border-b border-gray-100 last:border-0">
