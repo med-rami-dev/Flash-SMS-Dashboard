@@ -26,7 +26,7 @@ interface Service extends Models.Document {
   created_at: Date;
   updated_at: Date;
 }
-
+// 
 interface Country extends Models.Document {
   name: string;
   iso_code: string;
