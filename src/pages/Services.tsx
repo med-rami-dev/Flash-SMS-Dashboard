@@ -580,7 +580,7 @@ const Services: React.FC = () => {
                             : service.country_prices).slice(0, 3).map(([isoCode, price]) => (
                               <div key={isoCode} className="inline-flex items-center bg-gray-100 rounded px-1.5 py-0.5">
                                 <ReactCountryFlag countryCode={isoCode} svg style={{ width: '1em', height: '1em' }} />
-                                <span className="text-xs ml-1">{price}</span>
+                                <span className="text-xs ml-1">{String(price)}</span>
                               </div>
                             ))}
                           {Object.keys(typeof service.country_prices === 'string'
