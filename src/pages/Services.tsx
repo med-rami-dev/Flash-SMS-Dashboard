@@ -519,7 +519,7 @@ const Services: React.FC = () => {
                       <p className="text-xs text-gray-500 mt-1">
                         {Object.keys(typeof service.country_prices === 'string'
                           ? JSON.parse(service.country_prices)
-                          : service.country_prices).length} country-specific prices
+                          : service.country_prices).length} Set a Country Specific Price
                       </p>
                     )}
                   </div>
