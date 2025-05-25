@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { FaEdit, FaTrash, FaImage, FaSearch, FaUpload } from 'react-icons/fa';
 import * as PhosphorIcons from '@phosphor-icons/react';
 import type { IconProps } from '@phosphor-icons/react';
+import ReactCountryFlag from "react-country-flag";
 
 // Appwrite constants
 const APPWRITE_BUCKET_ID = 'icons';
@@ -21,8 +22,18 @@ interface Service extends Models.Document {
   icon_url: string;
   projectId: number;
   price: number;
+  country_prices?: Record<string, number>;
   created_at: Date;
   updated_at: Date;
+}
+
+interface Country extends Models.Document {
+  name: string;
+  iso_code: string;
+  currency?: string;
+  currency_symbol?: string;
+  price: string;
+  created_at: string;
 }
 
 type PhosphorIconComponent = React.ForwardRefExoticComponent<IconProps & React.RefAttributes<SVGSVGElement>>;
@@ -32,8 +43,10 @@ interface PhosphorIcon {
   Icon: PhosphorIconComponent;
 }
 
+
 const Services: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
+  const [countries, setCountries] = useState<Country[]>([]);
   const [name, setName] = useState('');
   const [iconUrl, setIconUrl] = useState('');
   const [price, setPrice] = useState('');
@@ -51,6 +64,8 @@ const Services: React.FC = () => {
   const [uploadedSvg, setUploadedSvg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [countryPrices, setCountryPrices] = useState<Record<string, string>>({});
+  const [selectedCountries, setSelectedCountries] = useState<Record<string, boolean>>({});
 
   // Get all Phosphor icons
   const phosphorIcons: PhosphorIcon[] = Object.entries(PhosphorIcons)
@@ -92,8 +107,29 @@ const Services: React.FC = () => {
     }
   };
 
+  const fetchCountries = async () => {
+    try {
+      const response = await databases.listDocuments(
+        '67f741820018b85a6f1a',
+        'countries',
+        [
+          Query.orderAsc('name')
+        ]
+      );
+      setCountries(response.documents as Country[]);
+    } catch (err: any) {
+      console.error('Error fetching countries:', err);
+      toast({
+        title: "Error",
+        description: "Failed to fetch countries",
+        variant: "destructive",
+      });
+    }
+  };
+
   useEffect(() => {
     fetchServices();
+    fetchCountries();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -111,11 +147,20 @@ const Services: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      // Process country prices
+      const countryPricingData: Record<string, number> = {};
+      Object.entries(selectedCountries).forEach(([countryId, isSelected]) => {
+        if (isSelected && countryPrices[countryId]) {
+          countryPricingData[countryId] = parseFloat(countryPrices[countryId]);
+        }
+      });
+
       const newService = {
         name,
         icon_url: iconUrl,
         price: parseFloat(price),
         projectId: parseInt(projectId),
+        country_prices: JSON.stringify(countryPricingData), // Convert to JSON string
         created_at: new Date().toISOString()
       };
 
@@ -126,17 +171,13 @@ const Services: React.FC = () => {
         newService
       );
 
-      // Clear form fields
       setName('');
       setIconUrl('');
       setPrice('');
       setProjectId('');
-      setUploadedSvg(null);
-
-      // Close the modal
+      setCountryPrices({});
+      setSelectedCountries({});
       setShowModal(false);
-
-      // Fetch updated services list
       fetchServices();
 
       toast({
@@ -168,6 +209,25 @@ const Services: React.FC = () => {
     setIconUrl(service.icon_url);
     setPrice(service.price.toString());
     setProjectId(service.projectId.toString());
+
+    // Initialize country prices and selected countries from service data
+    const countryPricesData: Record<string, string> = {};
+    const selectedCountriesData: Record<string, boolean> = {};
+
+    if (service.country_prices) {
+      // Parse the JSON string to get the country prices object
+      const countryPricesObj = typeof service.country_prices === 'string'
+        ? JSON.parse(service.country_prices)
+        : service.country_prices;
+
+      Object.entries(countryPricesObj).forEach(([countryId, price]) => {
+        countryPricesData[countryId] = price.toString();
+        selectedCountriesData[countryId] = true;
+      });
+    }
+
+    setCountryPrices(countryPricesData);
+    setSelectedCountries(selectedCountriesData);
     setShowModal(true);
   };
 
@@ -186,6 +246,14 @@ const Services: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      // Process country prices
+      const countryPricingData: Record<string, number> = {};
+      Object.entries(selectedCountries).forEach(([countryId, isSelected]) => {
+        if (isSelected && countryPrices[countryId]) {
+          countryPricingData[countryId] = parseFloat(countryPrices[countryId]);
+        }
+      });
+
       await databases.updateDocument(
         '67f741820018b85a6f1a',
         'services',
@@ -194,7 +262,8 @@ const Services: React.FC = () => {
           name,
           icon_url: iconUrl,
           price: parseFloat(price),
-          projectId: parseInt(projectId)
+          projectId: parseInt(projectId),
+          country_prices: JSON.stringify(countryPricingData) // Convert to JSON string
         }
       );
 
@@ -204,6 +273,8 @@ const Services: React.FC = () => {
       setIconUrl('');
       setPrice('');
       setProjectId('');
+      setCountryPrices({});
+      setSelectedCountries({});
       fetchServices();
 
       toast({
@@ -383,6 +454,17 @@ const Services: React.FC = () => {
     fileInputRef.current?.click();
   };
 
+  const handleAddNew = () => {
+    setEditingService(null);
+    setName('');
+    setIconUrl('');
+    setPrice('');
+    setProjectId('');
+    setCountryPrices({});
+    setSelectedCountries({});
+    setShowModal(true);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -404,16 +486,7 @@ const Services: React.FC = () => {
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold text-gray-900">Services Management</h2>
         <Button
-          onClick={() => {
-            // Reset form state when adding a new service
-            setEditingService(null);
-            setName('');
-            setIconUrl('');
-            setPrice('');
-            setProjectId('');
-            setUploadedSvg(null);
-            setShowModal(true);
-          }}
+          onClick={handleAddNew}
           className="bg-[#004aad] hover:bg-[#003d8a] text-white"
         >
           Add New Service
@@ -442,6 +515,13 @@ const Services: React.FC = () => {
                     <p className="text-lg font-semibold text-[#004aad]">
                       {service.price} Coins
                     </p>
+                    {service.country_prices && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {Object.keys(typeof service.country_prices === 'string'
+                          ? JSON.parse(service.country_prices)
+                          : service.country_prices).length} country-specific prices
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex space-x-2">
@@ -464,7 +544,7 @@ const Services: React.FC = () => {
                 </div>
               </div>
               <div className="text-sm text-gray-500">
-                Created: {new Date(service.created_at).toLocaleDateString()}
+                <div>Created: {new Date(service.created_at).toLocaleDateString()}</div>
               </div>
             </CardContent>
           </Card>
@@ -472,7 +552,7 @@ const Services: React.FC = () => {
       </div>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
               {editingService ? 'Edit' : 'Add New'} Service
@@ -543,7 +623,7 @@ const Services: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="price">Price</Label>
+              <Label htmlFor="price">Default Price</Label>
               <Input
                 id="price"
                 type="number"
@@ -555,11 +635,75 @@ const Services: React.FC = () => {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label>Country-Specific Pricing</Label>
+              <div className="border rounded-md p-4 max-h-60 overflow-y-auto">
+                {countries.map((country) => (
+                  <div key={country.$id} className="flex items-center space-x-2 py-2 border-b border-gray-100 last:border-0">
+                    <div className="flex items-center space-x-2 w-2/5">
+                      <div className="flex items-center h-4">
+                        <input
+                          type="checkbox"
+                          id={`country-${country.$id}`}
+                          className="h-4 w-4 rounded border-gray-300 text-[#004aad] focus:ring-[#004aad]"
+                          checked={!!selectedCountries[country.$id]}
+                          onChange={(e) => {
+                            setSelectedCountries({
+                              ...selectedCountries,
+                              [country.$id]: e.target.checked
+                            });
+                          }}
+                        />
+                      </div>
+                      <label htmlFor={`country-${country.$id}`} className="text-sm font-medium text-gray-700 cursor-pointer flex items-center space-x-2">
+                        <div className="flex items-center justify-center">
+                          <ReactCountryFlag
+                            countryCode={country.iso_code}
+                            svg
+                            style={{
+                              width: '1.5em',
+                              height: '1.5em',
+                            }}
+                            title={country.iso_code}
+                          />
+                        </div>
+                        <span>{country.name}</span>
+                      </label>
+                    </div>
+                    <div className="w-3/5">
+                      <Input
+                        type="number"
+                        value={countryPrices[country.$id] || ""}
+                        onChange={(e) => {
+                          setCountryPrices({
+                            ...countryPrices,
+                            [country.$id]: e.target.value
+                          });
+                        }}
+                        disabled={!selectedCountries[country.$id]}
+                        placeholder="0.00"
+                        className="w-full h-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="flex justify-end space-x-4">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingService(null);
+                  setName('');
+                  setIconUrl('');
+                  setPrice('');
+                  setProjectId('');
+                  setCountryPrices({});
+                  setSelectedCountries({});
+                }}
               >
                 Cancel
               </Button>
@@ -574,7 +718,6 @@ const Services: React.FC = () => {
           </form>
         </DialogContent>
       </Dialog>
-
 
       {/* SVG Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
@@ -605,7 +748,6 @@ const Services: React.FC = () => {
                 Only SVG files are supported
               </p>
             </div>
-
           </div>
           <DialogFooter>
             <Button
