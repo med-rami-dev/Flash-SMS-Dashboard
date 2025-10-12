@@ -4,70 +4,92 @@
 
 **URL**: https://lovable.dev/projects/3bb8ef21-9891-4d5e-b81e-127910106be2
 
-## How can I edit this code?
+# Flash SMS Dashboard
 
-There are several ways of editing your application.
+Lightweight admin dashboard built with Vite, React, and TypeScript. Tailwind CSS and shadcn-style components power the UI. This repository contains the dashboard app used to manage messages, offers, QA pages and other admin features.
 
-**Use Lovable**
+## Quick summary
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/3bb8ef21-9891-4d5e-b81e-127910106be2) and start prompting.
+- Framework: Vite + React + TypeScript
+- Styling: Tailwind CSS
+- UI primitives: Radix + shadcn-style components
+- State & data: react-query (TanStack Query), Appwrite integration
 
-Changes made via Lovable will be committed automatically to this repo.
+## Requirements
 
-**Use your preferred IDE**
+- Node.js 18+ (recommended)
+- npm (or a compatible package manager)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Setup (local development)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+1. Install dependencies
 
-Follow these steps:
+```powershell
+npm install
+```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2. Start development server
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```powershell
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Open http://localhost:5173 (Vite default) in your browser.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Available scripts
 
-**Use GitHub Codespaces**
+- `npm run dev` — Start the Vite development server
+- `npm run build` — Typecheck (tsc) then build for production with Vite
+- `npm run preview` — Preview the production build locally
+- `npm run lint` — Run ESLint across the codebase
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Environment variables
 
-## What technologies are used for this project?
+This project may require environment variables for integrations (for example Appwrite). Create a `.env` file at the project root and add values as needed. Example keys (adjust names to match your code):
 
-This project is built with:
+```
+VITE_APPWRITE_ENDPOINT=
+VITE_APPWRITE_PROJECT=
+VITE_API_URL=
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Note: Vite exposes variables prefixed with `VITE_` to the client bundle.
 
-## How can I deploy this project?
+## Project structure (high level)
 
-Simply open [Lovable](https://lovable.dev/projects/3bb8ef21-9891-4d5e-b81e-127910106be2) and click on Share -> Publish.
+- `src/` — application source code
+	- `components/` — reusable UI components and layout
+	- `pages/` — route pages (Dashboard, Login, Countries, etc.)
+	- `integrations/` — Appwrite client and API wrappers
+	- `lib/` — small utilities
+	- `types/` — shared TypeScript types
 
-## Can I connect a custom domain to my Lovable project?
+## Contributing
 
-Yes it is!
+- Follow the existing code style.
+- Run `npm run lint` before creating PRs.
+- For UI changes, prefer existing component primitives under `src/components/ui/`.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Deployment
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+Build the app and deploy the `dist/` output to any static hosting (Netlify, Vercel, S3, etc.):
+
+```powershell
+npm run build
+```
+
+Then serve or upload the `dist/` directory.
+
+## Notes
+
+- The project uses Appwrite for some backend interactions; check `src/integrations/appwrite` for usage details.
+- If you rely on external secrets, keep them out of the repo and provide them via CI or deployment platform.
+
+---
+
+If you'd like, I can also:
+- Add a `.env.example` with detected keys from the repo
+- Run `npm run lint` and show results
+- Add a brief developer setup script
+
+Tell me which of those you'd like next.
